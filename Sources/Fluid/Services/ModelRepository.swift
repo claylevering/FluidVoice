@@ -120,7 +120,7 @@ final class ModelRepository {
         case "ollama":
             return ("https://docs.ollama.com/api/openai-compatibility", "Setup Guide")
         case "lmstudio":
-            return ("https://lmstudio.ai/docs/local-server", "Setup Guide")
+            return ("https://lmstudio.ai/docs/developer/openai-compat/chat-completions", "Setup Guide")
         default:
             return nil
         }

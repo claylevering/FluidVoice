@@ -436,6 +436,141 @@ final class LLMClientRoutingTests: XCTestCase {
         XCTAssertNotNil(secondBody["messages"])
     }
 
+    func testOpenAICompatibleChatEndpoint_fallsBackUsingSameChatPath() async throws {
+        MockLLMURLProtocol.configure { _, requestIndex in
+            if requestIndex == 0 {
+                let body = Data("{\"error\":\"responses endpoint not supported\"}".utf8)
+                return MockLLMURLProtocol.MockResponse(statusCode: 404, body: body)
+            }
+
+            let payload: [String: Any] = [
+                "choices": [[
+                    "message": [
+                        "role": "assistant",
+                        "content": "Fallback response",
+                    ],
+                ]],
+            ]
+
+            let data = try JSONSerialization.data(withJSONObject: payload)
+            return MockLLMURLProtocol.MockResponse(statusCode: 200, body: data)
+        }
+
+        let client = self.makeClient()
+        let config = LLMClient.Config(
+            messages: [["role": "user", "content": "Hello"]],
+            providerID: "openai",
+            model: "gpt-4o-mini",
+            baseURL: "https://example.com/api/chat",
+            apiKey: "openai-test-key",
+            streaming: false
+        )
+
+        let response = try await client.call(config)
+        XCTAssertEqual(response.content, "Fallback response")
+
+        let requests = MockLLMURLProtocol.requests
+        XCTAssertEqual(requests.count, 2)
+
+        guard requests.count == 2 else {
+            XCTFail("Expected responses payload attempt then chat completions fallback on the same endpoint")
+            return
+        }
+
+        XCTAssertEqual(requests[0].url?.path, "/api/chat")
+        XCTAssertEqual(requests[1].url?.path, "/api/chat")
+
+        let firstBody = try self.decodeJSONBody(from: requests[0])
+        XCTAssertNotNil(firstBody["input"])
+        XCTAssertNil(firstBody["messages"])
+
+        let secondBody = try self.decodeJSONBody(from: requests[1])
+        XCTAssertNotNil(secondBody["messages"])
+        XCTAssertNil(secondBody["input"])
+    }
+
+    func testOpenAICompatibleFallback_normalizesResponsesStyleToolsForChatCompletions() async throws {
+        MockLLMURLProtocol.configure { _, requestIndex in
+            if requestIndex == 0 {
+                let body = Data("{\"error\":\"responses endpoint not supported\"}".utf8)
+                return MockLLMURLProtocol.MockResponse(statusCode: 404, body: body)
+            }
+
+            let payload: [String: Any] = [
+                "choices": [[
+                    "message": [
+                        "role": "assistant",
+                        "content": "Fallback response",
+                    ],
+                ]],
+            ]
+
+            let data = try JSONSerialization.data(withJSONObject: payload)
+            return MockLLMURLProtocol.MockResponse(statusCode: 200, body: data)
+        }
+
+        let client = self.makeClient()
+        let tools: [[String: Any]] = [
+            [
+                "type": "function",
+                "name": "execute_terminal_command",
+                "description": "Run a shell command",
+                "parameters": [
+                    "type": "object",
+                    "properties": [
+                        "command": ["type": "string"],
+                    ],
+                    "required": ["command"],
+                ],
+            ],
+        ]
+        let config = LLMClient.Config(
+            messages: [["role": "user", "content": "Hello"]],
+            providerID: "openai",
+            model: "gpt-4o-mini",
+            baseURL: "https://example.com/api/chat",
+            apiKey: "openai-test-key",
+            streaming: false,
+            tools: tools
+        )
+
+        _ = try await client.call(config)
+
+        let requests = MockLLMURLProtocol.requests
+        XCTAssertEqual(requests.count, 2)
+
+        guard requests.count == 2 else {
+            XCTFail("Expected fallback request sequence")
+            return
+        }
+
+        let firstBody = try self.decodeJSONBody(from: requests[0])
+        guard let responsesTools = firstBody["tools"] as? [[String: Any]],
+              let responsesTool = responsesTools.first
+        else {
+            XCTFail("Expected responses tools in first request")
+            return
+        }
+
+        XCTAssertEqual(responsesTool["name"] as? String, "execute_terminal_command")
+        XCTAssertNil(responsesTool["function"])
+
+        let secondBody = try self.decodeJSONBody(from: requests[1])
+        guard let chatTools = secondBody["tools"] as? [[String: Any]],
+              let chatTool = chatTools.first,
+              let function = chatTool["function"] as? [String: Any]
+        else {
+            XCTFail("Expected chat-completions tools in fallback request")
+            return
+        }
+
+        XCTAssertEqual(chatTool["type"] as? String, "function")
+        XCTAssertEqual(function["name"] as? String, "execute_terminal_command")
+        XCTAssertEqual(function["description"] as? String, "Run a shell command")
+        XCTAssertNotNil(function["parameters"])
+        XCTAssertNil(chatTool["name"])
+    }
+
     func testAnthropicPayload_normalizesToolCallsAndFiltersOpenAIOnlyExtras() async throws {
         MockLLMURLProtocol.configure { _, _ in
             let payload: [String: Any] = [
@@ -762,5 +897,32 @@ final class LLMClientRoutingTests: XCTestCase {
             XCTFail("Expected HTTP body")
         }
         return data
+    }
+}
+
+@MainActor
+final class MCPManagerNamingTests: XCTestCase {
+    func testMakeUniqueSanitizedToolName_preservesSuffixWhenBaseHitsMaxLength() {
+        let base = String(repeating: "a", count: 64)
+        var usedToolNames: Set<String> = [base]
+
+        let unique = MCPManager.makeUniqueSanitizedToolName(base: base, usedToolNames: &usedToolNames)
+
+        XCTAssertEqual(unique, String(repeating: "a", count: 62) + "_2")
+        XCTAssertEqual(unique.count, 64)
+    }
+
+    func testMakeUniqueSanitizedToolName_incrementsSuffixAcrossRepeatedCollisions() {
+        let base = String(repeating: "b", count: 64)
+        var usedToolNames: Set<String> = [
+            base,
+            String(repeating: "b", count: 62) + "_2",
+            String(repeating: "b", count: 62) + "_3",
+        ]
+
+        let unique = MCPManager.makeUniqueSanitizedToolName(base: base, usedToolNames: &usedToolNames)
+
+        XCTAssertEqual(unique, String(repeating: "b", count: 62) + "_4")
+        XCTAssertEqual(unique.count, 64)
     }
 }

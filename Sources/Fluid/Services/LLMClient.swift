@@ -157,6 +157,11 @@ final class LLMClient {
         let fallbackFormat: APIFormat?
     }
 
+    private struct PreparedRequest {
+        var request: URLRequest
+        let format: APIFormat
+    }
+
     private protocol APIRouteStrategy {
         var format: APIFormat { get }
         func endpoint(for baseURL: String) -> String
@@ -277,23 +282,27 @@ final class LLMClient {
     /// Handles thinking token extraction, tool call parsing, and retries.
     func call(_ config: Config) async throws -> Response {
         let routePlan = self.routePlan(for: config)
-        var request = try buildRequest(config, forcedFormat: routePlan.primaryFormat)
+        var preparedRequest = try self.buildRequest(config, forcedFormat: routePlan.primaryFormat)
 
         // Apply timeout to the request itself
         let timeout = config.timeoutSeconds ?? Self.defaultTimeoutSeconds
-        request.timeoutInterval = timeout
+        preparedRequest.request.timeoutInterval = timeout
 
-        self.logRequest(request)
+        self.logRequest(preparedRequest.request)
 
         // Execute the request. We rely on URLRequest/URLSession timeouts (30s default) rather
         // than racing a separate "timeout task". A task-group timeout wrapper can accidentally
         // keep the caller suspended until the full timeout elapses, which is the exact stall
         // we want to eliminate for overlay responsiveness.
-        return try await self.executeWithRetry(request: request, config: config, routePlan: routePlan)
+        return try await self.executeWithRetry(
+            request: preparedRequest,
+            config: config,
+            routePlan: routePlan
+        )
     }
 
     /// Execute request with retry logic (extracted for timeout wrapper)
-    private func executeWithRetry(request: URLRequest, config: Config, routePlan: RoutePlan) async throws -> Response {
+    private func executeWithRetry(request: PreparedRequest, config: Config, routePlan: RoutePlan) async throws -> Response {
         var currentRequest = request
         var attemptedResponsesFallback = false
         var lastError: Error?
@@ -301,13 +310,13 @@ final class LLMClient {
         for attempt in 1...config.maxRetries {
             do {
                 if config.streaming {
-                    return try await self.processStreaming(request: currentRequest, config: config)
+                    return try await self.processStreaming(request: currentRequest.request, format: currentRequest.format, config: config)
                 } else {
-                    return try await self.processNonStreaming(request: currentRequest)
+                    return try await self.processNonStreaming(request: currentRequest.request, format: currentRequest.format)
                 }
             } catch LLMError.httpError(let code, let message)
                 where !attemptedResponsesFallback &&
-                self.isResponsesRequest(currentRequest) &&
+                currentRequest.format == .responses &&
                 routePlan.fallbackFormat != nil &&
                 self.shouldFallbackToChat(statusCode: code, message: message)
             {
@@ -340,7 +349,7 @@ final class LLMClient {
 
     // MARK: - Request Building
 
-    private func buildRequest(_ config: Config, forcedFormat: APIFormat? = nil) throws -> URLRequest {
+    private func buildRequest(_ config: Config, forcedFormat: APIFormat? = nil) throws -> PreparedRequest {
         let baseURL = config.baseURL.trimmingCharacters(in: .whitespacesAndNewlines)
         let plan = self.routePlan(for: config)
         let apiFormat = forcedFormat ?? plan.primaryFormat
@@ -383,7 +392,7 @@ final class LLMClient {
 
         request.httpBody = jsonData
 
-        return request
+        return PreparedRequest(request: request, format: apiFormat)
     }
 
     private func buildChatCompletionsBody(_ config: Config) -> [String: Any] {
@@ -397,7 +406,7 @@ final class LLMClient {
         }
 
         if !config.tools.isEmpty {
-            body["tools"] = config.tools
+            body["tools"] = self.normalizeToolsForChatCompletions(config.tools)
             body["tool_choice"] = "auto"
         }
 
@@ -714,6 +723,36 @@ final class LLMClient {
         }
     }
 
+    private func normalizeToolsForChatCompletions(_ tools: [[String: Any]]) -> [[String: Any]] {
+        return tools.map { tool in
+            guard (tool["type"] as? String) == "function",
+                  tool["function"] == nil,
+                  let name = tool["name"] as? String
+            else {
+                return tool
+            }
+
+            var function: [String: Any] = [
+                "name": name,
+            ]
+
+            if let description = tool["description"] {
+                function["description"] = description
+            }
+            if let parameters = tool["parameters"] {
+                function["parameters"] = parameters
+            }
+            if let strict = tool["strict"] {
+                function["strict"] = strict
+            }
+
+            return [
+                "type": "function",
+                "function": function,
+            ]
+        }
+    }
+
     private func normalizeToolsForAnthropic(_ tools: [[String: Any]]) -> [[String: Any]] {
         return tools.compactMap { tool in
             let function = tool["function"] as? [String: Any]
@@ -798,7 +837,7 @@ final class LLMClient {
 
     // MARK: - Non-Streaming Response
 
-    private func processNonStreaming(request: URLRequest) async throws -> Response {
+    private func processNonStreaming(request: URLRequest, format: APIFormat) async throws -> Response {
         DebugLogger.shared.debug("LLMClient: Making non-streaming request to \(request.url?.absoluteString ?? "unknown")", source: "LLMClient")
 
         let (data, response) = try await self.session.data(for: request)
@@ -815,11 +854,11 @@ final class LLMClient {
             throw LLMError.invalidResponse
         }
 
-        if self.isAnthropicMessagesRequest(request) {
+        if format == .anthropicMessages {
             return self.parseAnthropicResponse(json)
         }
 
-        if self.isResponsesRequest(request) {
+        if format == .responses {
             return self.parseResponsesResponse(json)
         }
 
@@ -833,7 +872,7 @@ final class LLMClient {
         return self.parseMessageResponse(message)
     }
 
-    private func processStreaming(request: URLRequest, config: Config) async throws -> Response {
+    private func processStreaming(request: URLRequest, format: APIFormat, config: Config) async throws -> Response {
         DebugLogger.shared.debug("LLMClient: Starting streaming request to \(request.url?.absoluteString ?? "unknown")", source: "LLMClient")
 
         let (bytes, response) = try await self.session.bytes(for: request)
@@ -858,8 +897,8 @@ final class LLMClient {
         var contentBuffer: [String] = []
         var tagDetectionBuffer = ""
 
-        let isResponses = self.isResponsesRequest(request)
-        let isAnthropic = self.isAnthropicMessagesRequest(request)
+        let isResponses = format == .responses
+        let isAnthropic = format == .anthropicMessages
 
         if isAnthropic {
             parser = SeparateFieldThinkingParser()
@@ -1493,24 +1532,6 @@ final class LLMClient {
         default:
             return false
         }
-    }
-
-    private func isResponsesRequest(_ request: URLRequest) -> Bool {
-        request.url?.path.contains("/responses") == true
-    }
-
-    private func isAnthropicMessagesRequest(_ request: URLRequest) -> Bool {
-        if request.value(forHTTPHeaderField: "anthropic-version") != nil {
-            return true
-        }
-
-        if request.url?.path.contains("/messages") == true,
-           request.url?.host?.lowercased().contains("anthropic.com") == true
-        {
-            return true
-        }
-
-        return false
     }
 
     private func shouldFallbackToChat(statusCode: Int, message: String) -> Bool {

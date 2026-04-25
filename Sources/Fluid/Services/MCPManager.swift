@@ -10,6 +10,7 @@ import MCP
 @MainActor
 final class MCPManager {
     static let shared = MCPManager()
+    private static let maxToolNameLength = 64
 
     struct StatusSummary: Sendable {
         let enabledServers: Int
@@ -499,11 +500,20 @@ final class MCPManager {
         serverID: String, toolName: String, usedToolNames: inout Set<String>
     ) -> String {
         let base = Self.sanitizeToolName("mcp_\(serverID)_\(toolName)")
-        var candidate = base
+        let candidate = Self.makeUniqueSanitizedToolName(base: base, usedToolNames: &usedToolNames)
+
+        return candidate
+    }
+
+    static func makeUniqueSanitizedToolName(base: String, usedToolNames: inout Set<String>) -> String {
+        let truncatedBase = String(base.prefix(Self.maxToolNameLength))
+        var candidate = truncatedBase
         var counter = 2
 
         while usedToolNames.contains(candidate) {
-            candidate = Self.sanitizeToolName("\(base)_\(counter)")
+            let suffix = "_\(counter)"
+            let reservedBaseLength = max(0, Self.maxToolNameLength - suffix.count)
+            candidate = String(truncatedBase.prefix(reservedBaseLength)) + suffix
             counter += 1
         }
 
@@ -538,9 +548,8 @@ final class MCPManager {
             sanitized = "mcp_\(sanitized)"
         }
 
-        let maxLength = 64
-        if sanitized.count > maxLength {
-            sanitized = String(sanitized.prefix(maxLength))
+        if sanitized.count > Self.maxToolNameLength {
+            sanitized = String(sanitized.prefix(Self.maxToolNameLength))
         }
 
         return sanitized

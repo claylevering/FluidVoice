@@ -693,6 +693,83 @@ final class LLMClientRoutingTests: XCTestCase {
         XCTAssertEqual(toolResult?["tool_use_id"] as? String, "call_weather")
     }
 
+    func testResponsesStreaming_mergesFunctionArgumentsByItemIDWhenCallIDDiffers() async throws {
+        MockLLMURLProtocol.configure { _, _ in
+            let events: [[String: Any]] = [
+                [
+                    "type": "response.output_item.added",
+                    "output_index": 0,
+                    "item": [
+                        "type": "function_call",
+                        "id": "fc_123",
+                        "call_id": "call_123",
+                        "name": "execute_terminal_command",
+                    ],
+                ],
+                [
+                    "type": "response.function_call_arguments.delta",
+                    "output_index": 0,
+                    "item_id": "fc_123",
+                    "delta": "{\"command\":\"pwd\"",
+                ],
+                [
+                    "type": "response.function_call_arguments.done",
+                    "output_index": 0,
+                    "item_id": "fc_123",
+                    "arguments": "{\"command\":\"pwd\"}",
+                ],
+                [
+                    "type": "response.output_item.done",
+                    "output_index": 0,
+                    "item": [
+                        "type": "function_call",
+                        "id": "fc_123",
+                        "call_id": "call_123",
+                        "name": "execute_terminal_command",
+                    ],
+                ],
+            ]
+
+            var streamText = ""
+            for event in events {
+                let eventData = try JSONSerialization.data(withJSONObject: event)
+                guard let eventLine = String(bytes: eventData, encoding: .utf8) else {
+                    throw NSError(
+                        domain: "MockLLMURLProtocol",
+                        code: -5,
+                        userInfo: [NSLocalizedDescriptionKey: "Failed to encode mock SSE event"]
+                    )
+                }
+                streamText += "data: \(eventLine)\n\n"
+            }
+            streamText += "data: [DONE]\n\n"
+
+            return MockLLMURLProtocol.MockResponse(
+                statusCode: 200,
+                headers: ["Content-Type": "text/event-stream"],
+                body: Data(streamText.utf8)
+            )
+        }
+
+        let client = self.makeClient()
+        let config = LLMClient.Config(
+            messages: [["role": "user", "content": "Run pwd"]],
+            providerID: "openai",
+            model: "gpt-4o-mini",
+            baseURL: "https://api.openai.com/v1",
+            apiKey: "openai-test-key",
+            streaming: true,
+            tools: [TerminalService.toolDefinition]
+        )
+
+        let response = try await client.call(config)
+
+        XCTAssertEqual(response.toolCalls.count, 1)
+        XCTAssertEqual(response.toolCalls.first?.id, "call_123")
+        XCTAssertEqual(response.toolCalls.first?.name, "execute_terminal_command")
+        XCTAssertEqual(response.toolCalls.first?.arguments["command"] as? String, "pwd")
+    }
+
     func testAnthropicStreaming_parsesThinkingTextAndToolArguments() async throws {
         MockLLMURLProtocol.configure { _, _ in
             let events: [[String: Any]] = [

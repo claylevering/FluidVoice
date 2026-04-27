@@ -913,6 +913,7 @@ final class LLMClient {
         var toolCallAccumulators: [String: StreamingToolAccumulator] = [:]
         var sawOutputTextDelta = false
         var anthropicToolIndexToID: [Int: String] = [:]
+        var responsesOutputIndexToAccumulatorKey: [Int: String] = [:]
 
         func processContentChunk(_ content: String) {
             let containsThinkTag = content.contains("<think") || content.contains("</think") || content.contains("<thinking") || content.contains("</thinking")
@@ -1075,8 +1076,22 @@ final class LLMClient {
                     }
 
                 case "response.function_call_arguments.delta", "response.function_call_arguments.done":
-                    let itemID = json["item_id"] as? String ?? "index_\(json["output_index"] as? Int ?? 0)"
-                    var accumulator = toolCallAccumulators[itemID] ?? StreamingToolAccumulator()
+                    let outputIndex = json["output_index"] as? Int
+                    let accumulatorKey: String
+                    if let itemID = json["item_id"] as? String {
+                        accumulatorKey = itemID
+                        if let outputIndex {
+                            responsesOutputIndexToAccumulatorKey[outputIndex] = itemID
+                        }
+                    } else if let outputIndex,
+                              let knownKey = responsesOutputIndexToAccumulatorKey[outputIndex]
+                    {
+                        accumulatorKey = knownKey
+                    } else {
+                        accumulatorKey = "index_\(outputIndex ?? 0)"
+                    }
+
+                    var accumulator = toolCallAccumulators[accumulatorKey] ?? StreamingToolAccumulator()
 
                     if let delta = json["delta"] as? String {
                         accumulator.arguments += delta
@@ -1085,15 +1100,35 @@ final class LLMClient {
                         accumulator.arguments = arguments
                     }
 
-                    toolCallAccumulators[itemID] = accumulator
+                    toolCallAccumulators[accumulatorKey] = accumulator
 
                 case "response.output_item.added", "response.output_item.done":
                     guard let item = json["item"] as? [String: Any] else { continue }
 
                     if (item["type"] as? String) == "function_call" {
-                        let id = item["call_id"] as? String ?? item["id"] as? String ?? "call_\(UUID().uuidString.prefix(8))"
-                        var accumulator = toolCallAccumulators[id] ?? StreamingToolAccumulator()
-                        accumulator.id = id
+                        let outputIndex = json["output_index"] as? Int
+                        let fallbackIndexKey = "index_\(outputIndex ?? 0)"
+                        let accumulatorKey =
+                            item["id"] as? String ?? json["item_id"] as? String
+                            ?? (outputIndex.map { "index_\($0)" })
+                            ?? item["call_id"] as? String
+                            ?? "call_\(UUID().uuidString.prefix(8))"
+                        let callID = item["call_id"] as? String ?? accumulatorKey
+
+                        if let outputIndex {
+                            responsesOutputIndexToAccumulatorKey[outputIndex] = accumulatorKey
+                        }
+
+                        if accumulatorKey != fallbackIndexKey,
+                           toolCallAccumulators[accumulatorKey] == nil,
+                           let existingAccumulator = toolCallAccumulators.removeValue(forKey: fallbackIndexKey)
+                        {
+                            toolCallAccumulators[accumulatorKey] = existingAccumulator
+                        }
+
+                        var accumulator =
+                            toolCallAccumulators[accumulatorKey] ?? StreamingToolAccumulator()
+                        accumulator.id = callID
                         if let name = item["name"] as? String {
                             if accumulator.name == nil {
                                 config.onToolCallStart?(name)
@@ -1103,7 +1138,7 @@ final class LLMClient {
                         if let arguments = item["arguments"] as? String {
                             accumulator.arguments = arguments
                         }
-                        toolCallAccumulators[id] = accumulator
+                        toolCallAccumulators[accumulatorKey] = accumulator
                     } else if (item["type"] as? String) == "reasoning" {
                         if let summary = item["summary"] as? String, !summary.isEmpty {
                             processReasoningChunk(summary)

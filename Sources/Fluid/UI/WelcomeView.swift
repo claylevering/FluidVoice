@@ -18,6 +18,7 @@ struct WelcomeView: View {
     @Binding var playgroundUsed: Bool
     var isTranscriptionFocused: FocusState<Bool>.Binding
     @Environment(\.theme) private var theme
+    @State private var hoveredHomeMetric: SidebarItem? = nil
 
     let accessibilityEnabled: Bool
     let stopAndProcessTranscription: () async -> Void
@@ -368,22 +369,6 @@ struct WelcomeView: View {
                             .font(.subheadline)
                             .foregroundStyle(.secondary)
                     }
-
-                    Spacer()
-
-                    HStack(spacing: 8) {
-                        Button("Dictation") {
-                            self.selectedSidebarItem = .voiceEngine
-                        }
-                        .buttonStyle(.borderedProminent)
-                        .tint(self.theme.palette.accent)
-
-                        Button("Settings") {
-                            self.selectedSidebarItem = .preferences
-                        }
-                        .buttonStyle(.bordered)
-                    }
-                    .controlSize(.small)
                 }
 
                 ViewThatFits(in: .horizontal) {
@@ -391,17 +376,20 @@ struct WelcomeView: View {
                         self.homeMetric(
                             title: "Hotkey",
                             value: self.settings.hotkeyShortcut.displayString,
-                            icon: "keyboard"
+                            icon: "keyboard",
+                            destination: .preferences
                         )
                         self.homeMetric(
                             title: "Voice Engine",
                             value: self.settings.selectedSpeechModel.displayName,
-                            icon: "waveform"
+                            icon: "waveform",
+                            destination: .voiceEngine
                         )
                         self.homeMetric(
                             title: "AI",
                             value: self.settings.isAIConfigured ? "Configured" : "Optional",
-                            icon: "sparkles"
+                            icon: "sparkles",
+                            destination: .aiEnhancements
                         )
                     }
 
@@ -409,17 +397,20 @@ struct WelcomeView: View {
                         self.homeMetric(
                             title: "Hotkey",
                             value: self.settings.hotkeyShortcut.displayString,
-                            icon: "keyboard"
+                            icon: "keyboard",
+                            destination: .preferences
                         )
                         self.homeMetric(
                             title: "Voice Engine",
                             value: self.settings.selectedSpeechModel.displayName,
-                            icon: "waveform"
+                            icon: "waveform",
+                            destination: .voiceEngine
                         )
                         self.homeMetric(
                             title: "AI",
                             value: self.settings.isAIConfigured ? "Configured" : "Optional",
-                            icon: "sparkles"
+                            icon: "sparkles",
+                            destination: .aiEnhancements
                         )
                     }
                 }
@@ -455,40 +446,57 @@ struct WelcomeView: View {
         }
     }
 
-    private func homeMetric(title: String, value: String, icon: String) -> some View {
-        HStack(alignment: .center, spacing: 10) {
-            Image(systemName: icon)
-                .font(.system(size: 12, weight: .semibold))
-                .foregroundStyle(self.theme.palette.accent)
-                .frame(width: 28, height: 28)
-                .background(
-                    RoundedRectangle(cornerRadius: 8, style: .continuous)
-                        .fill(self.theme.palette.contentBackground.opacity(0.8))
-                )
+    private func homeMetric(title: String, value: String, icon: String, destination: SidebarItem) -> some View {
+        let isHovered = self.hoveredHomeMetric == destination
 
-            VStack(alignment: .leading, spacing: 2) {
-                Text(title)
-                    .font(.caption.weight(.semibold))
-                    .foregroundStyle(.secondary)
-                Text(value)
-                    .font(.subheadline.weight(.medium))
-                    .lineLimit(1)
-                    .truncationMode(.tail)
+        return Button {
+            self.selectedSidebarItem = destination
+        } label: {
+            HStack(alignment: .center, spacing: 10) {
+                Image(systemName: icon)
+                    .font(.system(size: 12, weight: .semibold))
+                    .foregroundStyle(self.theme.palette.accent)
+                    .frame(width: 28, height: 28)
+                    .background(
+                        RoundedRectangle(cornerRadius: 8, style: .continuous)
+                            .fill(self.theme.palette.contentBackground.opacity(0.8))
+                    )
+
+                VStack(alignment: .leading, spacing: 2) {
+                    Text(title)
+                        .font(.caption.weight(.semibold))
+                        .foregroundStyle(.secondary)
+                    Text(value)
+                        .font(.subheadline.weight(.medium))
+                        .lineLimit(1)
+                        .truncationMode(.tail)
+                }
+
+                Spacer(minLength: 0)
             }
-
-            Spacer(minLength: 0)
+            .padding(.horizontal, 12)
+            .padding(.vertical, 10)
+            .frame(maxWidth: .infinity, alignment: .leading)
+            .contentShape(RoundedRectangle(cornerRadius: 10, style: .continuous))
+            .background(
+                RoundedRectangle(cornerRadius: 10, style: .continuous)
+                    .fill(isHovered ? self.theme.palette.accent.opacity(0.12) : self.theme.palette.contentBackground.opacity(0.52))
+                    .overlay(
+                        RoundedRectangle(cornerRadius: 10, style: .continuous)
+                            .stroke(isHovered ? self.theme.palette.accent.opacity(0.32) : self.theme.palette.cardBorder.opacity(0.35), lineWidth: 1)
+                    )
+            )
         }
-        .padding(.horizontal, 12)
-        .padding(.vertical, 10)
-        .frame(maxWidth: .infinity, alignment: .leading)
-        .background(
-            RoundedRectangle(cornerRadius: 10, style: .continuous)
-                .fill(self.theme.palette.contentBackground.opacity(0.52))
-                .overlay(
-                    RoundedRectangle(cornerRadius: 10, style: .continuous)
-                        .stroke(self.theme.palette.cardBorder.opacity(0.35), lineWidth: 1)
-                )
-        )
+        .buttonStyle(.plain)
+        .onHover { isHovering in
+            withAnimation(.easeInOut(duration: 0.16)) {
+                if isHovering {
+                    self.hoveredHomeMetric = destination
+                } else if self.hoveredHomeMetric == destination {
+                    self.hoveredHomeMetric = nil
+                }
+            }
+        }
     }
 }
 

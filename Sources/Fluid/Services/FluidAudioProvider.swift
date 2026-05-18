@@ -1,6 +1,5 @@
 import Foundation
 #if arch(arm64)
-import AVFoundation
 import FluidAudio
 
 private actor DownloadProgressSink {
@@ -28,11 +27,9 @@ final class FluidAudioProvider: TranscriptionProvider {
 
     private var streamingAsrManager: AsrManager?
     private var finalAsrManager: AsrManager?
-    private var slidingWindowManager: SlidingWindowAsrManager?
-    private var loadedModels: AsrModels?
-    private var streamedSampleCount: Int = 0
     private var latestStreamingPreviewText: String = ""
-    private var vocabularyBundle: (vocabulary: CustomVocabularyContext, ctcModels: CtcModels)?
+    private var latestStreamingPreviewSampleCount: Int = 0
+    private var latestStreamingPreviewFinishedAt: TimeInterval?
     private(set) var isReady: Bool = false
     private(set) var isWordBoostingActive: Bool = false
     private(set) var boostedVocabularyTermsCount: Int = 0
@@ -90,7 +87,6 @@ final class FluidAudioProvider: TranscriptionProvider {
             // Default to v3 (Multilingual)
             models = try await AsrModels.downloadAndLoad(version: .v3)
         }
-        self.loadedModels = models
         progressTicker.cancel()
         DebugLogger.shared.debug(
             "FluidAudioProvider: Models downloadAndLoad returned in \(String(format: "%.2f", Date().timeIntervalSince(loadStart)))s",
@@ -116,7 +112,6 @@ final class FluidAudioProvider: TranscriptionProvider {
         if self.configureWordBoosting {
             do {
                 if let vocabBundle = try await ParakeetVocabularyStore.shared.loadTokenizedVocabularyBundle() {
-                    self.vocabularyBundle = vocabBundle
                     DebugLogger.shared.debug(
                         "FluidAudioProvider: Vocabulary bundle loaded with \(vocabBundle.vocabulary.terms.count) terms",
                         source: "FluidAudioProvider"
@@ -150,9 +145,9 @@ final class FluidAudioProvider: TranscriptionProvider {
 
         self.streamingAsrManager = streamingManager
         self.finalAsrManager = finalManager
-        self.slidingWindowManager = nil
-        self.streamedSampleCount = 0
         self.latestStreamingPreviewText = ""
+        self.latestStreamingPreviewSampleCount = 0
+        self.latestStreamingPreviewFinishedAt = nil
         await progressSink.emit(0.98)
 
         self.isReady = true
@@ -167,6 +162,12 @@ final class FluidAudioProvider: TranscriptionProvider {
         try await self.transcribeFinal(samples)
     }
 
+    func resetStreamingPreviewCache() {
+        self.latestStreamingPreviewText = ""
+        self.latestStreamingPreviewSampleCount = 0
+        self.latestStreamingPreviewFinishedAt = nil
+    }
+
     func transcribeStreaming(_ samples: [Float]) async throws -> ASRTranscriptionResult {
         guard let fullPreviewManager = self.streamingAsrManager else {
             throw NSError(
@@ -177,18 +178,11 @@ final class FluidAudioProvider: TranscriptionProvider {
         }
 
         let startedAt = Date().timeIntervalSince1970
-        if SettingsStore.shared.parakeetFinalizationMode == .tokenTimedChunkMerge {
-            let slidingManager = try await self.ensureSlidingWindowManager()
-            let delta = try await self.consumeStreamingDelta(from: samples)
-            if !delta.isEmpty {
-                try await slidingManager.streamAudio(self.createPCMBuffer(from: delta))
-            }
-        } else if self.slidingWindowManager != nil {
-            await self.cancelSlidingWindowFinalState()
-        }
         let result = try await fullPreviewManager.transcribe(samples, source: AudioSource.microphone)
         let text = result.text.trimmingCharacters(in: .whitespacesAndNewlines)
         self.latestStreamingPreviewText = text
+        self.latestStreamingPreviewSampleCount = samples.count
+        self.latestStreamingPreviewFinishedAt = Date().timeIntervalSince1970
         let elapsedMs = Int(((Date().timeIntervalSince1970 - startedAt) * 1000).rounded())
         let audioMs = Int((Double(samples.count) / 16_000.0 * 1000).rounded())
         let rtf = audioMs > 0 ? Double(elapsedMs) / Double(audioMs) : 0
@@ -215,21 +209,9 @@ final class FluidAudioProvider: TranscriptionProvider {
 
         let startedAt = Date().timeIntervalSince1970
         if SettingsStore.shared.parakeetFinalizationMode == .tokenTimedChunkMerge {
-            do {
-                if let slidingResult = try await self.finishSlidingWindowTranscription(samples) {
-                    if self.shouldUseSlidingWindowFinal(slidingResult.text) {
-                        self.logFinalBenchmark(samples: samples, text: slidingResult.text, startedAt: startedAt, usedFallback: false)
-                        return slidingResult
-                    }
-                }
-            } catch {
-                DebugLogger.shared.warning(
-                    "ASR_BENCH provider_sliding_rejected reason=error error=\(error.localizedDescription)",
-                    source: "ASRBenchmark"
-                )
+            if let previewResult = await self.cachedStreamingPreviewResult(for: samples, startedAt: startedAt) {
+                return previewResult
             }
-        } else {
-            await self.cancelSlidingWindowFinalState()
         }
 
         // If the boosted final manager fails, fall back to the unboosted streaming
@@ -254,207 +236,94 @@ final class FluidAudioProvider: TranscriptionProvider {
         }
     }
 
-    private func ensureSlidingWindowManager() async throws -> SlidingWindowAsrManager {
-        if let slidingWindowManager {
-            return slidingWindowManager
+    func transcribeCachedStreamingPreviewIfAvailable(_ samples: [Float]) async -> ASRTranscriptionResult? {
+        guard SettingsStore.shared.parakeetFinalizationMode == .tokenTimedChunkMerge else {
+            return nil
         }
-        guard let loadedModels else {
-            throw NSError(
-                domain: "FluidAudioProvider",
-                code: -1,
-                userInfo: [NSLocalizedDescriptionKey: "ASR models not initialized"]
-            )
-        }
-
-        let manager = SlidingWindowAsrManager(config: .streaming)
-        if let vocabularyBundle {
-            try await manager.configureVocabularyBoosting(
-                vocabulary: vocabularyBundle.vocabulary,
-                ctcModels: vocabularyBundle.ctcModels
-            )
-        }
-        try await manager.start(models: loadedModels, source: .microphone)
-        self.slidingWindowManager = manager
-        self.streamedSampleCount = 0
-        self.latestStreamingPreviewText = ""
-        return manager
+        let startedAt = Date().timeIntervalSince1970
+        return await self.cachedStreamingPreviewResult(for: samples, startedAt: startedAt)
     }
 
-    private func cancelSlidingWindowFinalState() async {
-        await self.slidingWindowManager?.cancel()
-        self.slidingWindowManager = nil
-        self.streamedSampleCount = 0
-    }
-
-    private func consumeStreamingDelta(from samples: [Float]) async throws -> [Float] {
-        if samples.count < self.streamedSampleCount {
-            await self.slidingWindowManager?.cancel()
-            self.slidingWindowManager = nil
-            self.streamedSampleCount = 0
-            self.latestStreamingPreviewText = ""
+    private func cachedStreamingPreviewResult(for samples: [Float], startedAt: TimeInterval) async -> ASRTranscriptionResult? {
+        let text = self.latestStreamingPreviewText.trimmingCharacters(in: .whitespacesAndNewlines)
+        let finalSampleCount = samples.count
+        let previewSampleCount = min(self.latestStreamingPreviewSampleCount, finalSampleCount)
+        let tailSamples = max(0, finalSampleCount - previewSampleCount)
+        let tailMs = Int((Double(tailSamples) / 16_000.0 * 1000).rounded())
+        let coverage = finalSampleCount > 0 ? Double(previewSampleCount) / Double(finalSampleCount) : 0
+        let ageMs: Int
+        if let latestStreamingPreviewFinishedAt {
+            ageMs = Int(((Date().timeIntervalSince1970 - latestStreamingPreviewFinishedAt) * 1000).rounded())
+        } else {
+            ageMs = Int.max
         }
 
-        let delta = Array(samples.dropFirst(self.streamedSampleCount))
-        self.streamedSampleCount = samples.count
-        return delta
-    }
+        DebugLogger.shared.info(
+            """
+            ASR_BENCH provider_fast_preview_check finalSamples=\(finalSampleCount) previewSamples=\(previewSampleCount) \
+            tailMs=\(tailMs) coverage=\(String(format: "%.3f", coverage)) ageMs=\(ageMs) \
+            textChars=\(text.count) wordBoosting=\(self.isWordBoostingActive)
+            """,
+            source: "ASRBenchmark"
+        )
 
-    private func finishSlidingWindowTranscription(_ samples: [Float]) async throws -> ASRTranscriptionResult? {
-        guard let manager = self.slidingWindowManager else {
+        guard !text.isEmpty else {
+            self.logFastPreviewMiss(reason: "empty", tailMs: tailMs, coverage: coverage, ageMs: ageMs)
+            return nil
+        }
+        guard self.latestStreamingPreviewFinishedAt != nil, self.latestStreamingPreviewSampleCount > 0 else {
+            self.logFastPreviewMiss(reason: "missing_preview", tailMs: tailMs, coverage: coverage, ageMs: ageMs)
+            return nil
+        }
+        guard ageMs <= 3000 else {
+            self.logFastPreviewMiss(reason: "stale", tailMs: tailMs, coverage: coverage, ageMs: ageMs)
+            return nil
+        }
+        guard finalSampleCount >= 80_000 else {
+            self.logFastPreviewMiss(reason: "short_recording", tailMs: tailMs, coverage: coverage, ageMs: ageMs)
+            return nil
+        }
+        guard finalSampleCount <= 480_000 else {
+            self.logFastPreviewMiss(reason: "long_recording", tailMs: tailMs, coverage: coverage, ageMs: ageMs)
+            return nil
+        }
+        guard coverage >= 0.88 else {
+            self.logFastPreviewMiss(reason: "low_coverage", tailMs: tailMs, coverage: coverage, ageMs: ageMs)
+            return nil
+        }
+        guard tailMs <= 1800 else {
+            self.logFastPreviewMiss(reason: "large_tail", tailMs: tailMs, coverage: coverage, ageMs: ageMs)
             return nil
         }
 
-        let delta = try await self.consumeStreamingDelta(from: samples)
-        if !delta.isEmpty {
-            try await manager.streamAudio(self.createPCMBuffer(from: delta))
-        }
-
-        let text = try await manager.finish()
-        self.slidingWindowManager = nil
-        self.streamedSampleCount = 0
-        return ASRTranscriptionResult(text: text, confidence: text.isEmpty ? 0 : 1)
+        DebugLogger.shared.info(
+            """
+            ASR_BENCH provider_fast_preview_hit tailMs=\(tailMs) coverage=\(String(format: "%.3f", coverage)) \
+            ageMs=\(ageMs) textChars=\(text.count)
+            """,
+            source: "ASRBenchmark"
+        )
+        self.logFinalBenchmark(samples: samples, text: text, startedAt: startedAt, usedFallback: false, source: "livePreview")
+        return ASRTranscriptionResult(text: text, confidence: 0.95)
     }
 
-    private func shouldUseSlidingWindowFinal(_ text: String) -> Bool {
-        let cleaned = text.trimmingCharacters(in: .whitespacesAndNewlines)
-        guard !cleaned.isEmpty else { return false }
-        guard !self.hasSuspiciousMidWordPeriod(cleaned) else {
-            DebugLogger.shared.info("ASR_BENCH provider_sliding_rejected reason=mid_word_period", source: "ASRBenchmark")
-            return false
-        }
-        guard !self.hasSuspiciousAdjacentPunctuation(cleaned) else {
-            DebugLogger.shared.info("ASR_BENCH provider_sliding_rejected reason=adjacent_punctuation", source: "ASRBenchmark")
-            return false
-        }
-        guard !self.hasRepeatedAdjacentPhrase(cleaned) else {
-            DebugLogger.shared.info("ASR_BENCH provider_sliding_rejected reason=repeated_phrase", source: "ASRBenchmark")
-            return false
-        }
-        guard !self.hasRepeatedAdjacentClauseOpening(cleaned) else {
-            DebugLogger.shared.info("ASR_BENCH provider_sliding_rejected reason=repeated_clause_opening", source: "ASRBenchmark")
-            return false
-        }
-        guard !self.hasRepeatedWordTail(cleaned) else {
-            DebugLogger.shared.info("ASR_BENCH provider_sliding_rejected reason=repeated_word_tail", source: "ASRBenchmark")
-            return false
-        }
-        guard !self.latestStreamingPreviewText.isEmpty else { return true }
-
-        let minimumLength = Int(Double(self.latestStreamingPreviewText.count) * 0.92)
-        if cleaned.count < minimumLength {
-            DebugLogger.shared.info(
-                "ASR_BENCH provider_sliding_rejected reason=short slidingChars=\(cleaned.count) previewChars=\(self.latestStreamingPreviewText.count)",
-                source: "ASRBenchmark"
-            )
-            return false
-        }
-        return true
+    private func logFastPreviewMiss(reason: String, tailMs: Int, coverage: Double, ageMs: Int) {
+        DebugLogger.shared.info(
+            """
+            ASR_BENCH provider_fast_preview_miss reason=\(reason) tailMs=\(tailMs) \
+            coverage=\(String(format: "%.3f", coverage)) ageMs=\(ageMs)
+            """,
+            source: "ASRBenchmark"
+        )
     }
 
-    private func hasSuspiciousMidWordPeriod(_ text: String) -> Bool {
-        let chars = Array(text)
-        guard chars.count >= 3 else { return false }
-        for index in 1..<(chars.count - 1) where chars[index] == "." {
-            if chars[index - 1].isLetter, chars[index + 1].isLetter {
-                return true
-            }
-        }
-        return false
-    }
-
-    private func hasSuspiciousAdjacentPunctuation(_ text: String) -> Bool {
-        text.contains(".,") || text.contains(",.") || text.contains("..")
-    }
-
-    private func hasRepeatedAdjacentPhrase(_ text: String) -> Bool {
-        let words = text
-            .lowercased()
-            .split { !$0.isLetter && !$0.isNumber }
-            .map(String.init)
-        guard words.count >= 4 else { return false }
-
-        let maxPhraseLength = min(5, words.count / 2)
-        for phraseLength in 2...maxPhraseLength {
-            let maxStart = words.count - phraseLength * 2
-            guard maxStart >= 0 else { continue }
-            for start in 0...maxStart {
-                let first = words[start..<(start + phraseLength)]
-                let second = words[(start + phraseLength)..<(start + phraseLength * 2)]
-                if first.elementsEqual(second) {
-                    return true
-                }
-            }
-        }
-        return false
-    }
-
-    private func hasRepeatedAdjacentClauseOpening(_ text: String) -> Bool {
-        let clauses = text
-            .lowercased()
-            .split { ".;,!?".contains($0) }
-            .map { clause in
-                clause
-                    .split { !$0.isLetter && !$0.isNumber }
-                    .map(String.init)
-            }
-            .filter { $0.count >= 2 }
-
-        guard clauses.count >= 2 else { return false }
-        for index in 1..<clauses.count {
-            let previous = clauses[index - 1]
-            let current = clauses[index]
-            if previous.prefix(2).elementsEqual(current.prefix(2)) {
-                return true
-            }
-        }
-        return false
-    }
-
-    private func hasRepeatedWordTail(_ text: String) -> Bool {
-        let words = text
-            .lowercased()
-            .split { !$0.isLetter && !$0.isNumber }
-            .map(String.init)
-
-        for word in words where word.count >= 12 {
-            let characters = Array(word)
-            let maxTailLength = min(10, characters.count / 2 + 2)
-            guard maxTailLength >= 5 else { continue }
-
-            for tailLength in 5...maxTailLength {
-                let tail = String(characters.suffix(tailLength))
-                let prefix = String(characters.dropLast(tailLength))
-                if prefix.contains(tail) {
-                    return true
-                }
-            }
-        }
-
-        return false
-    }
-
-    private func createPCMBuffer(from samples: [Float]) throws -> AVAudioPCMBuffer {
-        guard
-            let format = AVAudioFormat(commonFormat: .pcmFormatFloat32, sampleRate: 16_000, channels: 1, interleaved: false),
-            let buffer = AVAudioPCMBuffer(pcmFormat: format, frameCapacity: AVAudioFrameCount(samples.count)),
-            let channelData = buffer.floatChannelData
-        else {
-            throw NSError(
-                domain: "FluidAudioProvider",
-                code: -2,
-                userInfo: [NSLocalizedDescriptionKey: "Failed to create audio buffer for sliding-window ASR"]
-            )
-        }
-
-        buffer.frameLength = AVAudioFrameCount(samples.count)
-        samples.withUnsafeBufferPointer { samplePtr in
-            guard let baseAddress = samplePtr.baseAddress else { return }
-            channelData[0].update(from: baseAddress, count: samples.count)
-        }
-        return buffer
-    }
-
-    private func logFinalBenchmark(samples: [Float], text: String, startedAt: TimeInterval, usedFallback: Bool) {
+    private func logFinalBenchmark(
+        samples: [Float],
+        text: String,
+        startedAt: TimeInterval,
+        usedFallback: Bool,
+        source: String = "full"
+    ) {
         let elapsedMs = Int(((Date().timeIntervalSince1970 - startedAt) * 1000).rounded())
         let audioMs = Int((Double(samples.count) / 16_000.0 * 1000).rounded())
         let rtf = audioMs > 0 ? Double(elapsedMs) / Double(audioMs) : 0
@@ -463,7 +332,7 @@ final class FluidAudioProvider: TranscriptionProvider {
             """
             ASR_BENCH provider_final_done samples=\(samples.count) audioMs=\(audioMs) \
             elapsedMs=\(elapsedMs) textChars=\(text.trimmingCharacters(in: .whitespacesAndNewlines).count) \
-            rtf=\(String(format: "%.3f", rtf)) fallback=\(usedFallback) finalizationMode=\(finalizationMode)
+            rtf=\(String(format: "%.3f", rtf)) fallback=\(usedFallback) finalizationMode=\(finalizationMode) source=\(source)
             """,
             source: "ASRBenchmark"
         )
@@ -604,6 +473,12 @@ final class FluidAudioProvider: TranscriptionProvider {
 
     func detectBoostedTerms(in text: String, limit: Int = 2) -> [String] {
         []
+    }
+
+    func resetStreamingPreviewCache() {}
+
+    func transcribeCachedStreamingPreviewIfAvailable(_ samples: [Float]) async -> ASRTranscriptionResult? {
+        nil
     }
 }
 #endif

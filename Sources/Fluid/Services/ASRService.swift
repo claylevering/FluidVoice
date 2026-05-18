@@ -787,6 +787,7 @@ final class ASRService: ObservableObject {
         self.benchmarkLastChunkSampleCount = 0
         self.streamingChunkAnalyticsSuccessCount = 0
         self.lastStreamingChunkFailureAnalyticsAt = nil
+        (self.transcriptionProvider as? FluidAudioProvider)?.resetStreamingPreviewCache()
         self.audioCapturePipeline.setRecordingEnabled(true)
         self.refreshWordBoostStatus()
         let dims = self.currentTranscriptionAnalyticsDimensions()
@@ -1030,20 +1031,25 @@ final class ASRService: ObservableObject {
             }
 
             DebugLogger.shared.debug("Starting transcription with \(pcm.count) samples (\(Float(pcm.count) / 16_000.0) seconds)", source: "ASRService")
-            DebugLogger.shared.debug("stop(): starting full transcription (samples: \(pcm.count)) using \(provider.name)", source: "ASRService")
-            DebugLogger.shared.debug("📝 Starting transcription executor...", source: "ASRService")
             let finalStartedAt = Date().timeIntervalSince1970
-            let result = try await transcriptionExecutor.run { [provider] in
-                DebugLogger.shared.debug("📝 Inside transcription executor closure", source: "ASRService")
-                let transcriptionResult = try await provider.transcribeFinal(pcm)
-                DebugLogger.shared.debug("📝 Transcription provider returned", source: "ASRService")
-                return transcriptionResult
+            let result: ASRTranscriptionResult
+            let finalSource: String
+            if let fluidProvider = provider as? FluidAudioProvider,
+               let cachedResult = await fluidProvider.transcribeCachedStreamingPreviewIfAvailable(pcm)
+            {
+                result = cachedResult
+                finalSource = "livePreview"
+                self.benchmarkLog("final_fast_preview_bypass hit=true")
+            } else {
+                result = try await self.transcriptionExecutor.run { [provider] in
+                    try await provider.transcribeFinal(pcm)
+                }
+                finalSource = "full"
             }
             let finalElapsedMs = self.elapsedMilliseconds(since: finalStartedAt)
             let finalAudioSeconds = Double(pcm.count) / 16_000.0
             let finalRTF = finalAudioSeconds > 0 ? (Double(finalElapsedMs) / 1000.0) / finalAudioSeconds : 0
-            DebugLogger.shared.debug("✅ Transcription executor completed", source: "ASRService")
-            DebugLogger.shared.debug("stop(): full transcription finished", source: "ASRService")
+            DebugLogger.shared.debug("stop(): final transcription finished source=\(finalSource)", source: "ASRService")
             DebugLogger.shared.debug(
                 "Transcription completed: '\(result.text)' (confidence: \(result.confidence))",
                 source: "ASRService"
@@ -1052,10 +1058,9 @@ final class ASRService: ObservableObject {
                 "Final ASR result | provider=\(provider.name) | samples=\(pcm.count) | textChars=\(result.text.trimmingCharacters(in: .whitespacesAndNewlines).count) | confidence=\(result.confidence)",
                 source: "ASRService"
             )
-            let finalTextChars = result.text.trimmingCharacters(in: .whitespacesAndNewlines).count
             self.benchmarkLog(
                 "final_done elapsedMs=\(finalElapsedMs) samples=\(pcm.count) audioMs=\(Int((finalAudioSeconds * 1000).rounded())) " +
-                    "textChars=\(finalTextChars) rtf=\(String(format: "%.3f", finalRTF)) streamedChunks=\(self.benchmarkCompletedStreamingChunks)"
+                    "textChars=\(result.text.trimmingCharacters(in: .whitespacesAndNewlines).count) rtf=\(String(format: "%.3f", finalRTF)) streamedChunks=\(self.benchmarkCompletedStreamingChunks) source=\(finalSource)"
             )
 
             // Mark first transcription as complete to clear loading state

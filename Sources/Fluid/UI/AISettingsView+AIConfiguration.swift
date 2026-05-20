@@ -511,6 +511,12 @@ extension AIEnhancementSettingsView {
     private func providerStatus(for item: ProviderItem) -> (text: String, color: Color, icon: String) {
         if item.id == "fluid-1" {
             let model = self.selectedFluidIntelligenceModel
+            if self.fluidIntelligenceLoadState.isLoading(model.id) {
+                return ("Loading \(model.parameterCount)", self.theme.palette.accent, "arrow.triangle.2.circlepath")
+            }
+            if self.fluidIntelligenceLoadState.isLoaded(model.id) {
+                return ("\(model.parameterCount) loaded", Color.fluidGreen, "memorychip.fill")
+            }
             if FluidIntelligenceIntegrationService.isModelInstalled(model) {
                 return ("\(model.parameterCount) ready", Color.fluidGreen, "checkmark.circle.fill")
             }
@@ -604,6 +610,29 @@ extension AIEnhancementSettingsView {
             .foregroundStyle(status.color)
 
             HStack(spacing: 8) {
+                Button(action: { self.loadFluidIntelligenceModel(model) }) {
+                    Label(
+                        self.fluidIntelligenceLoadState.isLoading(model.id) ? "Loading" : "Load",
+                        systemImage: self.fluidIntelligenceLoadState.isLoading(model.id) ? "arrow.triangle.2.circlepath" : "memorychip"
+                    )
+                    .font(.system(size: 12, weight: .medium))
+                }
+                .buttonStyle(GlassButtonStyle(height: AISettingsLayout.controlHeight))
+                .disabled(
+                    !FluidIntelligenceIntegrationService.isModelInstalled(model) ||
+                        self.fluidIntelligenceLoadState.isLoading(model.id)
+                )
+
+                Button(action: { self.unloadFluidIntelligenceModel() }) {
+                    Label("Unload", systemImage: "eject")
+                        .font(.system(size: 12, weight: .medium))
+                }
+                .buttonStyle(GlassButtonStyle(height: AISettingsLayout.controlHeight))
+                .disabled(
+                    self.fluidIntelligenceLoadState.isLoading(model.id) ||
+                        !self.fluidIntelligenceLoadState.isLoaded(model.id)
+                )
+
                 Button(action: { self.revealFluidIntelligenceModelFolder() }) {
                     Label("Models Folder", systemImage: "folder")
                         .font(.system(size: 12, weight: .medium))
@@ -640,10 +669,40 @@ extension AIEnhancementSettingsView {
     private func fluidIntelligenceModelStatus(
         for model: FluidRegisteredModel
     ) -> FluidIntelligenceModelStatus {
+        if self.fluidIntelligenceLoadState.isLoading(model.id) {
+            return FluidIntelligenceModelStatus(
+                title: "Loading model",
+                detail: "\(model.displayName) is warming into memory.",
+                icon: "arrow.triangle.2.circlepath",
+                detailIcon: "memorychip",
+                color: self.theme.palette.accent
+            )
+        }
+
+        if self.fluidIntelligenceLoadState.isLoaded(model.id) {
+            return FluidIntelligenceModelStatus(
+                title: "Model loaded",
+                detail: "\(model.displayName) is resident in memory and ready for the next dictation.",
+                icon: "memorychip.fill",
+                detailIcon: "checkmark.shield.fill",
+                color: Color.fluidGreen
+            )
+        }
+
+        if let message = self.fluidIntelligenceLoadState.failureMessage(for: model.id) {
+            return FluidIntelligenceModelStatus(
+                title: "Load failed",
+                detail: message,
+                icon: "exclamationmark.triangle.fill",
+                detailIcon: "info.circle",
+                color: .red
+            )
+        }
+
         if FluidIntelligenceIntegrationService.isModelInstalled(model) {
             return FluidIntelligenceModelStatus(
                 title: "Local model ready",
-                detail: "\(model.displayName) is installed and will run through llama.swift.",
+                detail: "\(model.displayName) is installed. Load it to keep it warm in memory.",
                 icon: "checkmark.circle.fill",
                 detailIcon: "checkmark.shield.fill",
                 color: Color.fluidGreen
@@ -692,6 +751,67 @@ extension AIEnhancementSettingsView {
         }
     }
 
+    func refreshFluidIntelligenceLoadState() {
+        Task { @MainActor in
+            guard let loaded = await FluidIntelligenceIntegrationService.shared.loadedModelState(),
+                  loaded.state == .ready
+            else {
+                self.fluidIntelligenceLoadState = .idle
+                return
+            }
+
+            self.fluidIntelligenceLoadState = .loaded(modelID: loaded.modelID)
+        }
+    }
+
+    private func loadFluidIntelligenceModel(_ model: FluidRegisteredModel) {
+        guard FluidIntelligenceIntegrationService.isModelInstalled(model) else {
+            self.fluidIntelligenceLoadState = .failed(modelID: model.id, message: "Model file is not installed.")
+            return
+        }
+
+        self.fluidIntelligenceLoadState = .loading(modelID: model.id)
+        Task { @MainActor in
+            do {
+                let status = try await FluidIntelligenceIntegrationService.shared.loadModel(model)
+                guard self.fluidIntelligenceSelectedModelID == model.id else { return }
+                switch status.state {
+                case .ready:
+                    self.fluidIntelligenceLoadState = .loaded(modelID: model.id)
+                default:
+                    self.fluidIntelligenceLoadState = .failed(
+                        modelID: model.id,
+                        message: status.message ?? "Model did not report ready."
+                    )
+                }
+            } catch {
+                guard self.fluidIntelligenceSelectedModelID == model.id else { return }
+                self.fluidIntelligenceLoadState = .failed(
+                    modelID: model.id,
+                    message: Self.errorMessage(for: error)
+                )
+            }
+            self.viewModel.refreshProviderItems()
+        }
+    }
+
+    private func unloadFluidIntelligenceModel() {
+        self.fluidIntelligenceLoadState = .idle
+        Task { @MainActor in
+            await FluidIntelligenceIntegrationService.shared.unloadCachedRuntime(reason: "user")
+            self.viewModel.refreshProviderItems()
+        }
+    }
+
+    private static func errorMessage(for error: Error) -> String {
+        if let localizedError = error as? LocalizedError,
+           let description = localizedError.errorDescription
+        {
+            return description
+        }
+        return String(describing: error)
+    }
+
     private func persistFluidIntelligenceModelSelection(_ value: String) {
         let model = FluidModelRegistry.model(id: value) ?? FluidModelRegistry.defaultModel
         let providerKey = self.viewModel.providerKey(for: "fluid-1")
@@ -711,6 +831,7 @@ extension AIEnhancementSettingsView {
             self.viewModel.selectedModel = model.id
         }
         self.viewModel.refreshProviderItems()
+        self.loadFluidIntelligenceModel(model)
     }
 
     private func providerDetailsSection(for item: ProviderItem) -> AnyView {

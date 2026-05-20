@@ -1,5 +1,29 @@
 import SwiftUI
 
+enum FluidIntelligenceModelLoadState: Equatable {
+    case idle
+    case loading(modelID: String)
+    case loaded(modelID: String)
+    case failed(modelID: String, message: String)
+
+    func isLoading(_ modelID: String) -> Bool {
+        if case .loading(modelID) = self { return true }
+        return false
+    }
+
+    func isLoaded(_ modelID: String) -> Bool {
+        if case .loaded(modelID) = self { return true }
+        return false
+    }
+
+    func failureMessage(for modelID: String) -> String? {
+        if case let .failed(failedModelID, message) = self, failedModelID == modelID {
+            return message
+        }
+        return nil
+    }
+}
+
 struct AIEnhancementSettingsView: View {
     @ObservedObject var viewModel: AIEnhancementSettingsViewModel
     @ObservedObject var settings: SettingsStore
@@ -8,6 +32,7 @@ struct AIEnhancementSettingsView: View {
     @State var expandedProviderID: String? = nil
     @State var providerSearchText: String = ""
     @State var fluidIntelligenceSelectedModelID: String = FluidIntelligenceIntegrationService.configuredModelID
+    @State var fluidIntelligenceLoadState: FluidIntelligenceModelLoadState = .idle
     @State var hoveredPromptCardKey: String? = nil
     @State var selectedPromptMode: SettingsStore.PromptMode = .dictate
     @State var hoveredPromptModeKey: String? = nil
@@ -19,6 +44,7 @@ struct AIEnhancementSettingsView: View {
             .onAppear {
                 self.viewModel.onAppear()
                 self.fluidIntelligenceSelectedModelID = FluidIntelligenceIntegrationService.configuredModelID
+                self.refreshFluidIntelligenceLoadState()
             }
             .onChange(of: self.viewModel.connectionStatus) { oldValue, newValue in
                 if oldValue == .success && newValue != .success {

@@ -28,6 +28,12 @@ actor FluidIntelligenceIntegrationService {
         let latencyMilliseconds: Int?
     }
 
+    struct LoadedModelState: Sendable, Equatable {
+        let modelID: String
+        let state: FluidIntelligenceRuntimeState
+        let message: String?
+    }
+
     private var cachedRuntime: RuntimeConfiguration?
     private var cachedClient: (any FluidIntelligenceClient)?
 
@@ -120,6 +126,56 @@ actor FluidIntelligenceIntegrationService {
             return FluidIntelligenceStatus(
                 state: .failed,
                 message: Self.errorMessage(for: error)
+            )
+        }
+    }
+
+    func loadedModelState() async -> LoadedModelState? {
+        guard let cachedRuntime, let cachedClient else { return nil }
+        let status = await cachedClient.status()
+        return LoadedModelState(
+            modelID: cachedRuntime.model,
+            state: status.state,
+            message: status.message
+        )
+    }
+
+    func loadModel(_ model: FluidRegisteredModel) async throws -> FluidIntelligenceStatus {
+        let runtime = try Self.localRuntimeConfiguration(for: model)
+        if let cachedRuntime, cachedRuntime != runtime {
+            await self.unloadCachedRuntime(reason: "switching to \(model.id)")
+        }
+
+        let start = ContinuousClock.now
+        await MainActor.run {
+            DebugLogger.shared.info(
+                "FluidIntelligence loading \(model.id)",
+                source: "FluidIntelligence"
+            )
+        }
+
+        let client = try self.client(for: runtime)
+        try await client.warmUp()
+        let status = await client.status()
+        let elapsed = start.duration(to: ContinuousClock.now)
+        let latencyMilliseconds = Int(elapsed.components.seconds * 1000) + Int(elapsed.components.attoseconds / 1_000_000_000_000_000)
+        await MainActor.run {
+            DebugLogger.shared.info(
+                "FluidIntelligence loaded \(model.id) in \(latencyMilliseconds)ms",
+                source: "FluidIntelligence"
+            )
+        }
+        return status
+    }
+
+    func unloadCachedRuntime(reason: String = "manual") async {
+        let previousModel = self.cachedRuntime?.model ?? "none"
+        self.cachedClient = nil
+        self.cachedRuntime = nil
+        await MainActor.run {
+            DebugLogger.shared.info(
+                "FluidIntelligence unloaded cached runtime model=\(previousModel) reason=\(reason)",
+                source: "FluidIntelligence"
             )
         }
     }
@@ -217,6 +273,21 @@ actor FluidIntelligenceIntegrationService {
                 apiKey: runtime.apiKey.isEmpty ? nil : runtime.apiKey,
                 timeoutSeconds: 120
             )
+        )
+    }
+
+    private static func localRuntimeConfiguration(for model: FluidRegisteredModel) throws -> RuntimeConfiguration {
+        guard let modelPath = self.localModelPath(for: model) else {
+            throw FluidIntelligenceError.missingModel(model.displayName)
+        }
+
+        return RuntimeConfiguration(
+            selectedProviderID: "fluid-1",
+            providerKey: "fluid-1",
+            baseURL: "",
+            model: model.id,
+            apiKey: "",
+            localModelPath: modelPath
         )
     }
 

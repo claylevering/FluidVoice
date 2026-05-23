@@ -45,6 +45,22 @@ enum PrivateAIModelLoadState: Equatable {
 }
 
 struct AIEnhancementSettingsView: View {
+    enum AIEnhancementTab: String, CaseIterable, Identifiable {
+        case providerCatalog
+        case promptsRouting
+
+        var id: String { self.rawValue }
+
+        var title: String {
+            switch self {
+            case .providerCatalog:
+                return "Provider Catalog"
+            case .promptsRouting:
+                return "Prompts & Routing"
+            }
+        }
+    }
+
     @ObservedObject var viewModel: AIEnhancementSettingsViewModel
     @ObservedObject var settings: SettingsStore
     @ObservedObject var promptTest: DictationPromptTestCoordinator
@@ -54,8 +70,7 @@ struct AIEnhancementSettingsView: View {
     @State var privateAISelectedModelID: String = PrivateAIIntegrationService.configuredModelID
     @State var privateAILoadState: PrivateAIModelLoadState = .idle
     @State var hoveredPromptCardKey: String? = nil
-    @State var showProviderCatalog: Bool = !SettingsStore.shared.isAIConfigured
-    @State var showPromptAdvanced: Bool = false
+    @State var selectedTab: AIEnhancementTab = .providerCatalog
     @State var selectedPromptMode: SettingsStore.PromptMode = .dictate
     @State var hoveredPromptModeKey: String? = nil
     @State var hoveredCleanupControlKey: String? = nil

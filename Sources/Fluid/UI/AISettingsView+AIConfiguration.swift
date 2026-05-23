@@ -53,11 +53,11 @@ extension AIEnhancementSettingsView {
                     self.aiSetupHeader
                     self.activeAIConfigurationSummary
 
-                    HStack(spacing: 12) {
+                    HStack(alignment: .center, spacing: 12) {
                         VStack(alignment: .leading, spacing: 2) {
                             Text("AI Configuration")
                                 .font(.system(size: 14, weight: .semibold))
-                            Text("The active provider stays visible. Expand the catalog only when you need to switch or add one.")
+                            Text("Switch between provider setup and prompt routing from the top tabs.")
                                 .font(.caption)
                                 .foregroundStyle(.secondary)
                         }
@@ -85,29 +85,25 @@ extension AIEnhancementSettingsView {
                             )
                         }
                         .buttonStyle(.plain)
+
+                        Picker("", selection: self.$selectedTab) {
+                            ForEach(AIEnhancementSettingsView.AIEnhancementTab.allCases) { tab in
+                                Text(tab.title).tag(tab)
+                            }
+                        }
+                        .pickerStyle(.segmented)
+                        .frame(width: 420, alignment: .trailing)
                     }
 
                     if self.viewModel.showHelp { self.helpSectionView }
 
-                    self.aiDisclosureSection(
-                        title: "Provider Catalog",
-                        subtitle: "Verified providers, available integrations, model pickers, and connection testing.",
-                        icon: "building.2",
-                        isExpanded: self.$showProviderCatalog
-                    ) {
-                        self.providerStepContent
-                    }
-
-                    Divider()
-                        .background(self.theme.palette.separator.opacity(0.5))
-
-                    self.aiDisclosureSection(
-                        title: "Prompts & Routing",
-                        subtitle: "Prompt presets, app-specific overrides, Edit mode routing, and advanced prompt management.",
-                        icon: "text.bubble",
-                        isExpanded: self.$showPromptAdvanced
-                    ) {
-                        self.promptsStepContent
+                    Group {
+                        switch self.selectedTab {
+                        case .providerCatalog:
+                            self.providerStepContent
+                        case .promptsRouting:
+                            self.promptsStepContent
+                        }
                     }
                 }
                 .padding(16)
@@ -241,50 +237,6 @@ extension AIEnhancementSettingsView {
         .background(
             RoundedRectangle(cornerRadius: 10, style: .continuous)
                 .fill(self.theme.palette.cardBackground.opacity(0.76))
-        )
-    }
-
-    private func aiDisclosureSection<Content: View>(
-        title: String,
-        subtitle: String,
-        icon: String,
-        isExpanded: Binding<Bool>,
-        @ViewBuilder content: @escaping () -> Content
-    ) -> some View {
-        DisclosureGroup(isExpanded: isExpanded) {
-            VStack(alignment: .leading, spacing: 12) {
-                content()
-            }
-            .padding(.top, 12)
-        } label: {
-            HStack(alignment: .top, spacing: 10) {
-                Image(systemName: icon)
-                    .font(.system(size: 12, weight: .semibold))
-                    .foregroundStyle(self.theme.palette.accent)
-                    .frame(width: 24, height: 24)
-                    .background(
-                        RoundedRectangle(cornerRadius: 7, style: .continuous)
-                            .fill(self.theme.palette.contentBackground.opacity(0.84))
-                    )
-
-                VStack(alignment: .leading, spacing: 2) {
-                    Text(title)
-                        .font(.system(size: 13, weight: .semibold))
-                        .foregroundStyle(self.theme.palette.primaryText)
-                    Text(subtitle)
-                        .font(.caption)
-                        .foregroundStyle(self.theme.palette.secondaryText)
-                }
-            }
-        }
-        .padding(12)
-        .background(
-            RoundedRectangle(cornerRadius: 12, style: .continuous)
-                .fill(self.theme.palette.cardBackground.opacity(0.52))
-                .overlay(
-                    RoundedRectangle(cornerRadius: 12, style: .continuous)
-                        .stroke(self.theme.palette.cardBorder.opacity(0.28), lineWidth: 1)
-                )
         )
     }
 

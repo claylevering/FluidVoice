@@ -2116,12 +2116,11 @@ struct FillerWordsEditor: View {
     @Environment(\.theme) private var theme
 
     var body: some View {
-        VStack(alignment: .leading, spacing: 10) {
+        VStack(alignment: .leading, spacing: 12) {
             Text("Filler words to remove:")
-                .font(.subheadline)
+                .font(.caption.weight(.semibold))
                 .foregroundStyle(.secondary)
 
-            // Word chips
             FlowLayout(spacing: 6) {
                 ForEach(self.fillerWords, id: \.self) { word in
                     HStack(spacing: 4) {
@@ -2139,16 +2138,19 @@ struct FillerWordsEditor: View {
                     .padding(.vertical, 4)
                     .background(
                         RoundedRectangle(cornerRadius: 6, style: .continuous)
-                            .fill(.quaternary)
+                            .fill(self.theme.palette.contentBackground.opacity(0.72))
+                            .overlay(
+                                RoundedRectangle(cornerRadius: 6, style: .continuous)
+                                    .stroke(self.theme.palette.cardBorder.opacity(0.24), lineWidth: 1)
+                            )
                     )
                 }
             }
 
-            // Add new word
             HStack(spacing: 8) {
                 TextField("Add word", text: self.$newWord)
                     .textFieldStyle(.roundedBorder)
-                    .frame(width: 100)
+                    .frame(minWidth: 160, maxWidth: 220)
                     .onSubmit { self.addWord() }
 
                 Button("Add") { self.addWord() }

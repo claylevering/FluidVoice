@@ -2247,6 +2247,33 @@ final class SettingsStore: ObservableObject {
         }
     }
 
+    /// Stores actual microphone audio locally alongside dictation history.
+    var saveAudioWithTranscriptionHistory: Bool {
+        get {
+            let value = self.defaults.object(forKey: Keys.saveAudioWithTranscriptionHistory)
+            return value as? Bool ?? false
+        }
+        set {
+            objectWillChange.send()
+            self.defaults.set(newValue, forKey: Keys.saveAudioWithTranscriptionHistory)
+        }
+    }
+
+    var audioHistoryBudgetGB: Double {
+        get {
+            let value = self.defaults.double(forKey: Keys.audioHistoryBudgetGB)
+            return value > 0 ? max(0.1, value) : 4.0
+        }
+        set {
+            objectWillChange.send()
+            self.defaults.set(max(0.1, newValue), forKey: Keys.audioHistoryBudgetGB)
+        }
+    }
+
+    var audioHistoryBudgetBytes: Int64 {
+        DictationAudioHistoryStore.bytes(forGigabytes: self.audioHistoryBudgetGB)
+    }
+
     /// Whether to show a native notification when AI post-processing fails and raw text is used
     var notifyAIProcessingFailures: Bool {
         get {
@@ -2310,6 +2337,8 @@ final class SettingsStore: ObservableObject {
             transcriptionPreviewCharLimit: self.transcriptionPreviewCharLimit,
             userTypingWPM: self.userTypingWPM,
             saveTranscriptionHistory: self.saveTranscriptionHistory,
+            saveAudioWithTranscriptionHistory: self.saveAudioWithTranscriptionHistory,
+            audioHistoryBudgetGB: self.audioHistoryBudgetGB,
             notifyAIProcessingFailures: self.notifyAIProcessingFailures,
             weekendsDontBreakStreak: self.weekendsDontBreakStreak,
             fillerWords: self.fillerWords,
@@ -2385,6 +2414,12 @@ final class SettingsStore: ObservableObject {
         self.transcriptionPreviewCharLimit = payload.transcriptionPreviewCharLimit
         self.userTypingWPM = payload.userTypingWPM
         self.saveTranscriptionHistory = payload.saveTranscriptionHistory
+        if let saveAudioWithTranscriptionHistory = payload.saveAudioWithTranscriptionHistory {
+            self.saveAudioWithTranscriptionHistory = saveAudioWithTranscriptionHistory
+        }
+        if let audioHistoryBudgetGB = payload.audioHistoryBudgetGB {
+            self.audioHistoryBudgetGB = audioHistoryBudgetGB
+        }
         if let notifyAIProcessingFailures = payload.notifyAIProcessingFailures {
             self.notifyAIProcessingFailures = notifyAIProcessingFailures
         }
@@ -3608,6 +3643,8 @@ private extension SettingsStore {
         // Stats Keys
         static let userTypingWPM = "UserTypingWPM"
         static let saveTranscriptionHistory = "SaveTranscriptionHistory"
+        static let saveAudioWithTranscriptionHistory = "SaveAudioWithTranscriptionHistory"
+        static let audioHistoryBudgetGB = "AudioHistoryBudgetGB"
         static let notifyAIProcessingFailures = "NotifyAIProcessingFailures"
 
         // Filler Words

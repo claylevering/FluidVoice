@@ -1,4 +1,6 @@
+import AppKit
 import SwiftUI
+import UniformTypeIdentifiers
 
 struct TranscriptionHistoryView: View {
     @ObservedObject private var historyStore = TranscriptionHistoryStore.shared
@@ -143,6 +145,13 @@ struct TranscriptionHistoryView: View {
                             )
                     }
 
+                    if self.hasAudio(entry) {
+                        Image(systemName: "waveform")
+                            .font(.system(size: 10, weight: .semibold))
+                            .foregroundStyle(isSelected ? .white.opacity(0.8) : self.theme.palette.accent)
+                            .help("Saved local dictation audio")
+                    }
+
                     if entry.aiProcessingError != nil {
                         Image(systemName: "exclamationmark.triangle.fill")
                             .font(.system(size: 10, weight: .bold))
@@ -192,6 +201,22 @@ struct TranscriptionHistoryView: View {
                     self.copyToClipboard(self.combinedText(for: entry))
                 } label: {
                     Label("Copy Both", systemImage: "doc.on.doc")
+                }
+            }
+
+            if self.hasAudio(entry) {
+                Divider()
+
+                Button {
+                    self.exportPair(entry)
+                } label: {
+                    Label("Export Pair...", systemImage: "square.and.arrow.up")
+                }
+
+                Button {
+                    self.revealAudio(entry)
+                } label: {
+                    Label("Reveal Audio", systemImage: "waveform")
                 }
             }
 
@@ -293,6 +318,26 @@ struct TranscriptionHistoryView: View {
                         }
                         .buttonStyle(.bordered)
                         .controlSize(.small)
+
+                        if self.hasAudio(entry) {
+                            Button {
+                                self.exportPair(entry)
+                            } label: {
+                                Label("Export Pair", systemImage: "square.and.arrow.up")
+                                    .font(.system(size: 12, weight: .medium))
+                            }
+                            .buttonStyle(.bordered)
+                            .controlSize(.small)
+
+                            Button {
+                                self.revealAudio(entry)
+                            } label: {
+                                Label("Audio", systemImage: "waveform")
+                                    .font(.system(size: 12, weight: .medium))
+                            }
+                            .buttonStyle(.bordered)
+                            .controlSize(.small)
+                        }
 
                         if entry.wasAIProcessed {
                             Button {
@@ -452,6 +497,7 @@ struct TranscriptionHistoryView: View {
                 self.metadataItem(icon: "macwindow", label: "Window", value: entry.windowTitle.isEmpty ? "Unknown" : entry.windowTitle)
                 self.metadataItem(icon: "character.cursor.ibeam", label: "Characters", value: "\(entry.characterCount)")
                 self.metadataItem(icon: "sparkles", label: "AI Processed", value: entry.wasAIProcessed ? "Yes" : "No")
+                self.metadataItem(icon: "waveform", label: "Audio", value: self.audioMetadataText(for: entry))
             }
         }
     }
@@ -488,6 +534,46 @@ struct TranscriptionHistoryView: View {
 
     private func combinedText(for entry: TranscriptionHistoryEntry) -> String {
         "\(entry.rawText)\n\n\(entry.processedText)"
+    }
+
+    private func hasAudio(_ entry: TranscriptionHistoryEntry) -> Bool {
+        DictationAudioHistoryStore.shared.audioFileExists(for: entry)
+    }
+
+    private func audioMetadataText(for entry: TranscriptionHistoryEntry) -> String {
+        guard let audio = entry.audio, self.hasAudio(entry) else { return "No" }
+        let seconds = Double(audio.durationMilliseconds) / 1000.0
+        let size = ByteCountFormatter.string(fromByteCount: Int64(audio.byteCount), countStyle: .file)
+        return "\(String(format: "%.1f", seconds))s, \(size)"
+    }
+
+    private func revealAudio(_ entry: TranscriptionHistoryEntry) {
+        guard let url = DictationAudioHistoryStore.shared.audioFileURL(for: entry),
+              FileManager.default.fileExists(atPath: url.path)
+        else {
+            return
+        }
+        NSWorkspace.shared.activateFileViewerSelecting([url])
+    }
+
+    private func exportPair(_ entry: TranscriptionHistoryEntry) {
+        do {
+            guard self.hasAudio(entry) else { throw DictationAudioHistoryError.audioMissing }
+            let panel = NSSavePanel()
+            panel.canCreateDirectories = true
+            panel.allowedContentTypes = [.zip]
+            panel.nameFieldStringValue = DictationAudioHistoryStore.shared.suggestedPairExportFilename(for: entry)
+
+            guard panel.runModal() == .OK, let url = panel.url else { return }
+            try DictationAudioHistoryStore.shared.exportPair(entry: entry, to: url)
+        } catch {
+            let alert = NSAlert()
+            alert.messageText = "Pair Export Failed"
+            alert.informativeText = error.localizedDescription
+            alert.alertStyle = .critical
+            alert.addButton(withTitle: "OK")
+            alert.runModal()
+        }
     }
 
     // MARK: - No Selection View

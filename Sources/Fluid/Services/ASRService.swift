@@ -505,6 +505,7 @@ final class ASRService: ObservableObject {
     // Thread-safe buffer to prevent "Array mutation while enumerating" and memory corruption crashes
     // during long sessions where reallocation occurs frequently.
     private let audioBuffer = ThreadSafeAudioBuffer()
+    private var lastCompletedAudioSnapshot: DictationAudioSnapshot?
 
     // Streaming transcription state (no VAD)
     private var streamingTask: Task<Void, Never>?
@@ -540,6 +541,12 @@ final class ASRService: ObservableObject {
     private var audioLevelSubject = PassthroughSubject<CGFloat, Never>()
     var audioLevelPublisher: AnyPublisher<CGFloat, Never> { self.audioLevelSubject.eraseToAnyPublisher() }
     private var lastAudioLevelSentAt: TimeInterval = 0
+
+    func consumeLastCompletedAudioSnapshot() -> DictationAudioSnapshot? {
+        let snapshot = self.lastCompletedAudioSnapshot
+        self.lastCompletedAudioSnapshot = nil
+        return snapshot
+    }
 
     private var streamingChunkDurationSeconds: Double {
         if SettingsStore.shared.parakeetFinalizationMode == .tokenTimedChunkMerge {
@@ -922,6 +929,7 @@ final class ASRService: ObservableObject {
     /// Check debug logs for detailed error information.
     func stop() async -> String {
         DebugLogger.shared.info("🛑 STOP() called - beginning shutdown sequence", source: "ASRService")
+        self.lastCompletedAudioSnapshot = nil
         let stopStartedAt = Date().timeIntervalSince1970
         self.benchmarkLog("stop_start ageMs=\(self.elapsedMilliseconds(since: self.benchmarkRecordingStartedAt)) bufferedSamples=\(self.audioBuffer.count)")
 
@@ -991,6 +999,7 @@ final class ASRService: ObservableObject {
         // Thread-safe copy of recorded audio
         var pcm = self.audioBuffer.getAll()
         self.audioBuffer.clear()
+        let capturedPCM = pcm
         self.benchmarkLog("stop_audio_drained samples=\(pcm.count) audioMs=\(Int((Double(pcm.count) / 16_000.0 * 1000).rounded()))")
 
         // Drop recordings with no audio at all — nothing to transcribe.
@@ -1097,6 +1106,16 @@ final class ASRService: ObservableObject {
             self.recordWordBoostHitIfAny(transcribedText: cleanedText)
             DebugLogger.shared.debug("After post-processing: '\(cleanedText)'", source: "ASRService")
             self.benchmarkLog("stop_end result=success totalMs=\(self.elapsedMilliseconds(since: stopStartedAt)) recordingAgeMs=\(self.elapsedMilliseconds(since: self.benchmarkRecordingStartedAt)) cleanedChars=\(cleanedText.count)")
+            if SettingsStore.shared.saveTranscriptionHistory,
+               SettingsStore.shared.saveAudioWithTranscriptionHistory,
+               !capturedPCM.isEmpty
+            {
+                self.lastCompletedAudioSnapshot = DictationAudioSnapshot(
+                    samples: capturedPCM,
+                    sampleRate: 16_000,
+                    channels: 1
+                )
+            }
 
             // Resume media playback if we paused it
             if shouldResumeMedia {

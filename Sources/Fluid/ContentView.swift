@@ -1836,6 +1836,7 @@ struct ContentView: View {
         // Stop the ASR service and wait for transcription to complete
         // The processing indicator will stay visible during this phase
         let transcribedText = await asr.stop()
+        let audioSnapshot = self.asr.consumeLastCompletedAudioSnapshot()
         DebugLogger.shared.info(
             "Stop transcription result | chars=\(transcribedText.count) | empty=\(transcribedText.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty)",
             source: "ContentView"
@@ -2013,12 +2014,22 @@ struct ContentView: View {
 
         // Save to transcription history (transcription mode only, if enabled)
         if shouldPersistOutputs, SettingsStore.shared.saveTranscriptionHistory {
+            let historyEntryID = UUID()
+            let historyTimestamp = Date()
             TranscriptionHistoryStore.shared.addEntry(
+                id: historyEntryID,
+                timestamp: historyTimestamp,
                 rawText: transcribedText,
                 processedText: finalText,
                 appName: appInfo.name,
                 windowTitle: appInfo.windowTitle,
                 aiProcessingError: aiFallbackReason
+            )
+            self.persistDictationAudioIfNeeded(
+                audioSnapshot,
+                entryID: historyEntryID,
+                timestamp: historyTimestamp,
+                model: transcriptionModelInfo.model
             )
         }
         let shouldShowAIProcessingFailure = shouldPersistOutputs && aiFallbackReason != nil
@@ -2104,6 +2115,44 @@ struct ContentView: View {
 
         if !didTypeExternally, !shouldShowAIProcessingFailure {
             NotchOverlayManager.shared.hide()
+        }
+    }
+
+    private func persistDictationAudioIfNeeded(
+        _ snapshot: DictationAudioSnapshot?,
+        entryID: UUID,
+        timestamp: Date,
+        model: String
+    ) {
+        guard SettingsStore.shared.saveTranscriptionHistory,
+              SettingsStore.shared.saveAudioWithTranscriptionHistory,
+              let snapshot = snapshot
+        else {
+            return
+        }
+
+        Task.detached(priority: .utility) {
+            let result: (metadata: DictationAudioMetadata?, error: String?) = {
+                do {
+                    let metadata = try DictationAudioHistoryStore.shared.save(
+                        snapshot: snapshot,
+                        entryID: entryID,
+                        timestamp: timestamp,
+                        model: model
+                    )
+                    return (metadata, nil)
+                } catch {
+                    return (nil, error.localizedDescription)
+                }
+            }()
+
+            await MainActor.run {
+                if let metadata = result.metadata {
+                    TranscriptionHistoryStore.shared.attachAudio(metadata, to: entryID)
+                } else if let error = result.error {
+                    DebugLogger.shared.error("Failed to save dictation audio: \(error)", source: "ContentView")
+                }
+            }
         }
     }
 

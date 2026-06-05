@@ -113,7 +113,7 @@ final class AIEnhancementSettingsViewModel: ObservableObject {
     @Published var draftPromptMode: SettingsStore.PromptMode = .dictate
     @Published var draftIncludeContext: Bool = false
     @Published var promptEditorSessionID: UUID = .init()
-    private var lastActivePrimaryDictationPromptSelection: SettingsStore.DictationPromptSelection?
+    private var lastActiveDictationSelection: SettingsStore.DictationPromptSelection?
 
     // Prompt Deletion UI
     @Published var showingDeletePromptConfirm: Bool = false
@@ -149,7 +149,7 @@ final class AIEnhancementSettingsViewModel: ObservableObject {
         self.selectedEditPromptID = self.settings.selectedEditPromptID
         self.isDictationPromptOff = self.settings.isDictationPromptOff
         if !self.settings.isDictationPromptOff {
-            self.lastActivePrimaryDictationPromptSelection = self.settings.dictationPromptSelection
+            self.lastActiveDictationSelection = self.settings.dictationPromptSelection
         }
 
         if !ModelRepository.shared.isBuiltIn(self.selectedProviderID),
@@ -1795,7 +1795,7 @@ final class AIEnhancementSettingsViewModel: ObservableObject {
     func selectPrimaryDictationPromptOff() {
         let currentSelection = self.settings.dictationPromptSelection
         if currentSelection != .off {
-            self.lastActivePrimaryDictationPromptSelection = currentSelection
+            self.lastActiveDictationSelection = currentSelection
         }
         self.settings.setDictationPromptSelection(.off)
         self.selectedDictationPromptID = self.settings.selectedDictationPromptID
@@ -1810,7 +1810,7 @@ final class AIEnhancementSettingsViewModel: ObservableObject {
     }
 
     private func restorablePrimaryDictationPromptSelection() -> SettingsStore.DictationPromptSelection {
-        switch self.lastActivePrimaryDictationPromptSelection {
+        switch self.lastActiveDictationSelection {
         case let .profile(id):
             if self.settings.dictationPromptProfiles.contains(where: { $0.id == id && $0.mode.normalized == .dictate }) {
                 return .profile(id)

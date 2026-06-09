@@ -139,8 +139,8 @@ struct SettingsView: View {
                     return "__OFF__"
                 case .default:
                     return "__DEFAULT__"
-                case .fluid1:
-                    return Fluid1PromptFormat.promptSelectionID
+                case .privateAI:
+                    return PrivateAIProviderPromptFormat.promptSelectionID
                 case let .profile(id):
                     return id
                 }
@@ -150,13 +150,13 @@ struct SettingsView: View {
                 case "__OFF__":
                     self.settings.setDictationPromptSelection(.off, for: slot)
                 case "__DEFAULT__":
-                    guard !Fluid1PromptFormat.isAvailable(settings: self.settings) else { return }
+                    guard !PrivateAIProviderPromptFormat.isAvailable(settings: self.settings) else { return }
                     self.settings.setDictationPromptSelection(.default, for: slot)
-                case Fluid1PromptFormat.promptSelectionID:
-                    guard Fluid1PromptFormat.isAvailable(settings: self.settings) else { return }
-                    self.settings.setDictationPromptSelection(.fluid1, for: slot)
+                case PrivateAIProviderPromptFormat.promptSelectionID:
+                    guard PrivateAIProviderPromptFormat.isAvailable(settings: self.settings) else { return }
+                    self.settings.setDictationPromptSelection(.privateAI, for: slot)
                 default:
-                    guard !Fluid1PromptFormat.isAvailable(settings: self.settings) else { return }
+                    guard !PrivateAIProviderPromptFormat.isAvailable(settings: self.settings) else { return }
                     self.settings.setDictationPromptSelection(.profile(newValue), for: slot)
                 }
             }
@@ -166,7 +166,7 @@ struct SettingsView: View {
     @ViewBuilder
     private func dictationPromptPicker(for slot: SettingsStore.DictationShortcutSlot) -> some View {
         let profiles = self.settings.promptProfiles(for: .dictate)
-        let fluid1Locked = Fluid1PromptFormat.isAvailable(settings: self.settings)
+        let privateAILocked = PrivateAIProviderPromptFormat.isAvailable(settings: self.settings)
         HStack {
             Text("AI Prompt")
                 .font(.subheadline)
@@ -175,14 +175,16 @@ struct SettingsView: View {
             Spacer()
             Picker("", selection: self.dictationPromptSelectionBinding(for: slot)) {
                 Text("Off").tag("__OFF__")
-                Text("Default").tag("__DEFAULT__").disabled(fluid1Locked)
-                Text("Fluid Intelligence")
-                    .tag(Fluid1PromptFormat.promptSelectionID)
-                    .disabled(!fluid1Locked)
+                Text("Default").tag("__DEFAULT__").disabled(privateAILocked)
+                if PrivateFeatures.privateAIProvider {
+                    Text(PrivateAIProviderFeature.displayName)
+                        .tag(PrivateAIProviderPromptFormat.promptSelectionID)
+                        .disabled(!privateAILocked)
+                }
                 ForEach(profiles) { profile in
                     Text(profile.name.isEmpty ? "Untitled" : profile.name)
                         .tag(profile.id)
-                        .disabled(fluid1Locked)
+                        .disabled(privateAILocked)
                 }
             }
             .frame(width: 190)

@@ -1284,8 +1284,8 @@ private struct BottomOverlayPromptMenuView: View {
     let onDismissRequested: () -> Void
     @State private var hoveredRowID: String?
 
-    private var fluid1Locked: Bool {
-        self.promptMode.normalized == .dictate && Fluid1PromptFormat.isAvailable(settings: self.settings)
+    private var privateAILocked: Bool {
+        self.promptMode.normalized == .dictate && PrivateAIProviderPromptFormat.isAvailable(settings: self.settings)
     }
 
     private func rowBackground(isSelected: Bool, rowID: String) -> some View {
@@ -1350,11 +1350,11 @@ private struct BottomOverlayPromptMenuView: View {
     @ViewBuilder
     private func defaultRow(selectedID: String?) -> some View {
         let activeSlot = self.contentState.activeDictationShortcutSlot ?? .primary
-        let isSelected = !self.fluid1Locked && (self.promptMode.normalized == .dictate
+        let isSelected = !self.privateAILocked && (self.promptMode.normalized == .dictate
             ? (self.settings.dictationPromptSelection(for: activeSlot) == .default)
             : (selectedID == nil))
         Button(action: {
-            guard !self.fluid1Locked else { return }
+            guard !self.privateAILocked else { return }
             if self.promptMode.normalized == .dictate {
                 self.contentState.onDictationPromptSelectionRequested?(.default)
             } else {
@@ -1376,26 +1376,26 @@ private struct BottomOverlayPromptMenuView: View {
             .background(self.rowBackground(isSelected: isSelected, rowID: "default"))
         }
         .buttonStyle(.plain)
-        .disabled(self.fluid1Locked)
-        .opacity(self.fluid1Locked ? 0.45 : 1)
+        .disabled(self.privateAILocked)
+        .opacity(self.privateAILocked ? 0.45 : 1)
         .onHover { hovering in
-            self.hoveredRowID = hovering && !self.fluid1Locked ? "default" : nil
+            self.hoveredRowID = hovering && !self.privateAILocked ? "default" : nil
         }
     }
 
     @ViewBuilder
-    private func fluid1Row() -> some View {
+    private func privateAIRow() -> some View {
         let activeSlot = self.contentState.activeDictationShortcutSlot ?? .primary
-        let isAvailable = Fluid1PromptFormat.isAvailable(settings: self.settings)
-        let isSelected = self.settings.dictationPromptSelection(for: activeSlot) == .fluid1
+        let isAvailable = PrivateAIProviderPromptFormat.isAvailable(settings: self.settings)
+        let isSelected = self.settings.dictationPromptSelection(for: activeSlot) == .privateAI
         Button(action: {
             guard isAvailable else { return }
-            self.contentState.onDictationPromptSelectionRequested?(.fluid1)
+            self.contentState.onDictationPromptSelectionRequested?(.privateAI)
             self.restoreTypingTargetApp()
             self.onDismissRequested()
         }) {
             HStack {
-                Text("Fluid Intelligence")
+                Text(PrivateAIProviderFeature.displayName)
                 Spacer()
                 if isSelected {
                     Image(systemName: "checkmark")
@@ -1404,25 +1404,25 @@ private struct BottomOverlayPromptMenuView: View {
             }
             .padding(.horizontal, 8)
             .padding(.vertical, 6)
-            .background(self.rowBackground(isSelected: isSelected, rowID: "fluid-1"))
+            .background(self.rowBackground(isSelected: isSelected, rowID: PrivateAIProviderFeature.shared.providerID))
         }
         .buttonStyle(.plain)
         .disabled(!isAvailable)
         .opacity(isAvailable ? 1 : 0.45)
-        .help(isAvailable ? "Use Fluid Intelligence" : "Select Fluid Intelligence to enable this prompt")
+        .help(isAvailable ? "Use \(PrivateAIProviderFeature.displayName)" : "Select \(PrivateAIProviderFeature.displayName) to enable this prompt")
         .onHover { hovering in
-            self.hoveredRowID = hovering && isAvailable ? "fluid-1" : nil
+            self.hoveredRowID = hovering && isAvailable ? PrivateAIProviderFeature.shared.providerID : nil
         }
     }
 
     @ViewBuilder
     private func profileRow(_ profile: SettingsStore.DictationPromptProfile, selectedID: String?) -> some View {
         let activeSlot = self.contentState.activeDictationShortcutSlot ?? .primary
-        let isSelected = !self.fluid1Locked && (self.promptMode.normalized == .dictate
+        let isSelected = !self.privateAILocked && (self.promptMode.normalized == .dictate
             ? (self.settings.dictationPromptSelection(for: activeSlot) == .profile(profile.id))
             : (selectedID == profile.id))
         Button(action: {
-            guard !self.fluid1Locked else { return }
+            guard !self.privateAILocked else { return }
             if self.promptMode.normalized == .dictate {
                 self.contentState.onDictationPromptSelectionRequested?(.profile(profile.id))
             } else {
@@ -1444,10 +1444,10 @@ private struct BottomOverlayPromptMenuView: View {
             .background(self.rowBackground(isSelected: isSelected, rowID: profile.id))
         }
         .buttonStyle(.plain)
-        .disabled(self.fluid1Locked)
-        .opacity(self.fluid1Locked ? 0.45 : 1)
+        .disabled(self.privateAILocked)
+        .opacity(self.privateAILocked ? 0.45 : 1)
         .onHover { hovering in
-            self.hoveredRowID = hovering && !self.fluid1Locked ? profile.id : nil
+            self.hoveredRowID = hovering && !self.privateAILocked ? profile.id : nil
         }
     }
 
@@ -1463,15 +1463,15 @@ private struct BottomOverlayPromptMenuView: View {
                     .padding(.vertical, 4)
             }
 
-            if !self.fluid1Locked {
+            if !self.privateAILocked {
                 self.defaultRow(selectedID: selectedID)
             }
 
-            if self.promptMode.normalized == .dictate {
-                self.fluid1Row()
+            if self.promptMode.normalized == .dictate && PrivateFeatures.privateAIProvider {
+                self.privateAIRow()
             }
 
-            if !self.fluid1Locked && !profiles.isEmpty {
+            if !self.privateAILocked && !profiles.isEmpty {
                 Divider()
                     .padding(.vertical, 4)
 

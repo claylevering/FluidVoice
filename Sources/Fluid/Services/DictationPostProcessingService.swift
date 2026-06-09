@@ -33,19 +33,19 @@ final class DictationPostProcessingService {
             source: "DictationPostProcessingService"
         )
 
-        if FluidIntelligenceIntegrationService.shouldHandleDictation(model: resolved.model) {
-            let response = try await FluidIntelligenceIntegrationService.shared.enhanceDictation(
+        if PrivateAIIntegrationService.shouldHandleDictation(model: resolved.model) {
+            let response = try await PrivateAIIntegrationService.shared.enhanceDictation(
                 trimmed,
-                runtime: FluidIntelligenceIntegrationService.RuntimeConfiguration(
+                runtime: PrivateAIIntegrationService.RuntimeConfiguration(
                     selectedProviderID: resolved.providerID,
                     providerKey: resolved.providerKey,
                     baseURL: resolved.baseURL,
                     model: resolved.model,
                     apiKey: resolved.apiKey,
-                    localModelPath: FluidIntelligenceIntegrationService.configuredLocalModelPath,
-                    usesStablePromptPrefixKVCache: settings.fluidIntelligencePrefixKVCacheEnabled
+                    localModelPath: PrivateAIIntegrationService.configuredLocalModelPath,
+                    usesStablePromptPrefixKVCache: settings.privateAIPrefixKVCacheEnabled
                 ),
-                context: FluidIntelligenceIntegrationService.AppContext(
+                context: PrivateAIIntegrationService.AppContext(
                     appName: "",
                     bundleID: "",
                     windowTitle: "",

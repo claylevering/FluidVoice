@@ -1574,30 +1574,30 @@ struct ContentView: View {
 
         let appInfo = self.recordingAppInfo ?? self.getCurrentAppInfo()
         let isDictationCall = overrideSystemPrompt != nil || dictationSlot != nil
-        let useFluidIntelligence = overrideSystemPrompt == nil &&
+        let usePrivateAIProvider = overrideSystemPrompt == nil &&
             isDictationCall &&
-            FluidIntelligenceIntegrationService.shouldHandleDictation(model: derivedSelectedModel)
+            PrivateAIIntegrationService.shouldHandleDictation(model: derivedSelectedModel)
 
-        if useFluidIntelligence {
+        if usePrivateAIProvider {
             if self.shouldTracePromptProcessing {
-                self.logDictationPromptTrace("Fluid Intelligence task", value: "dictationEnhancement")
+                self.logDictationPromptTrace("Private AI Provider task", value: "dictationEnhancement")
                 self.logDictationPromptTrace("Input transcription (Q)", value: inputText)
                 self.logDictationPromptTrace("Selected context text", value: "<none (dictation mode)>")
             }
 
             let apiKey = storedProviderAPIKeys[derivedCurrentProvider] ?? storedProviderAPIKeys[currentSelectedProviderID] ?? ""
-            let response = try await FluidIntelligenceIntegrationService.shared.enhanceDictation(
+            let response = try await PrivateAIIntegrationService.shared.enhanceDictation(
                 inputText,
-                runtime: FluidIntelligenceIntegrationService.RuntimeConfiguration(
+                runtime: PrivateAIIntegrationService.RuntimeConfiguration(
                     selectedProviderID: currentSelectedProviderID,
                     providerKey: derivedCurrentProvider,
                     baseURL: derivedBaseURL,
                     model: derivedSelectedModel,
                     apiKey: apiKey,
-                    localModelPath: FluidIntelligenceIntegrationService.configuredLocalModelPath,
-                    usesStablePromptPrefixKVCache: SettingsStore.shared.fluidIntelligencePrefixKVCacheEnabled
+                    localModelPath: PrivateAIIntegrationService.configuredLocalModelPath,
+                    usesStablePromptPrefixKVCache: SettingsStore.shared.privateAIPrefixKVCacheEnabled
                 ),
-                context: FluidIntelligenceIntegrationService.AppContext(
+                context: PrivateAIIntegrationService.AppContext(
                     appName: appInfo.name,
                     bundleID: appInfo.bundleId,
                     windowTitle: appInfo.windowTitle,
@@ -2670,14 +2670,14 @@ struct ContentView: View {
             _ = self.handleCancelShortcut()
         }
         NotchContentState.shared.onDictationPromptSelectionRequested = { selection in
-            let fluid1Available = Fluid1PromptFormat.isAvailable()
+            let privateAIAvailable = PrivateAIProviderPromptFormat.isAvailable()
             switch selection {
             case .off:
                 break
-            case .fluid1:
-                guard fluid1Available else { return }
+            case .privateAI:
+                guard privateAIAvailable else { return }
             case .default, .profile:
-                guard !fluid1Available else { return }
+                guard !privateAIAvailable else { return }
             }
             let slot = self.activeDictationShortcutSlot ?? .primary
             SettingsStore.shared.setDictationPromptSelection(selection, for: slot)
@@ -3035,10 +3035,10 @@ extension ContentView {
             self.promptModeOverrideText = nil
             NotchContentState.shared.promptModeOverrideProfileName = nil
             NotchContentState.shared.promptModeOverrideProfileID = nil
-        case .fluid1:
+        case .privateAI:
             self.promptModeOverrideText = nil
-            NotchContentState.shared.promptModeOverrideProfileName = "Fluid Intelligence"
-            NotchContentState.shared.promptModeOverrideProfileID = Fluid1PromptFormat.promptSelectionID
+            NotchContentState.shared.promptModeOverrideProfileName = PrivateAIProviderFeature.displayName
+            NotchContentState.shared.promptModeOverrideProfileID = PrivateAIProviderPromptFormat.promptSelectionID
         case let .profile(profileID):
             guard let profile = settings.selectedDictationPromptProfile(for: slot) ?? settings.dictationPromptProfiles.first(where: {
                 $0.id == profileID && $0.mode.normalized == .dictate

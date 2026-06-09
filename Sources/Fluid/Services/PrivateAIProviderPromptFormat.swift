@@ -1,19 +1,12 @@
-import FluidIntelligence
 import Foundation
 
-enum Fluid1PromptFormat {
-    static let promptSelectionID = "__FLUID_1__"
+enum PrivateAIProviderPromptFormat {
+    static var promptSelectionID: String {
+        PrivateAIProviderFeature.shared.promptSelectionID
+    }
 
     nonisolated static func matches(model: String) -> Bool {
-        let normalized = model.trimmingCharacters(in: .whitespacesAndNewlines).lowercased()
-        if FluidModelRegistry.model(id: normalized) != nil {
-            return true
-        }
-
-        let compact = normalized
-            .replacingOccurrences(of: "_", with: "-")
-            .replacingOccurrences(of: " ", with: "-")
-        return compact.contains("fluid-1") || compact.contains("fluid1") || normalized.contains("fluid one")
+        PrivateAIProviderFeature.shared.matches(model: model)
     }
 
     static func isAvailable(settings: SettingsStore = .shared) -> Bool {

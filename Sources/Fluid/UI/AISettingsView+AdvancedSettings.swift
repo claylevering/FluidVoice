@@ -189,14 +189,14 @@ extension AIEnhancementSettingsView {
     }
 
     private var promptProcessingControl: some View {
-        let isFluid1Locked = self.viewModel.isFluid1ModelSelected()
+        let isPrivateAILocked = self.viewModel.isPrivateAIModelSelected()
         let isOff = self.viewModel.isPrimaryDictationPromptSelectionOff()
         let helpText: String = {
             if isOff {
                 return "Off: dictation types the raw transcript. Prompts and app overrides are paused."
             }
-            if isFluid1Locked {
-                return "On: Fluid Intelligence uses the Fluid Intelligence prompt."
+            if isPrivateAILocked {
+                return "On: \(PrivateAIProviderFeature.displayName) uses the \(PrivateAIProviderFeature.displayName) prompt."
             }
             return "On: dictation follows the selected prompt scope."
         }()
@@ -274,8 +274,8 @@ extension AIEnhancementSettingsView {
         let customProfiles = self.viewModel.dictationPromptProfiles
             .filter { $0.mode.normalized == mode }
         let tone = self.modeAccentColor(mode)
-        let isFluid1Locked = mode.normalized == .dictate && self.viewModel.isFluid1ModelSelected()
-        let isSelectedAppsOnly = !isFluid1Locked && self.viewModel.promptRoutingScope(for: mode) == .selectedAppsOnly
+        let isPrivateAILocked = mode.normalized == .dictate && self.viewModel.isPrivateAIModelSelected()
+        let isSelectedAppsOnly = !isPrivateAILocked && self.viewModel.promptRoutingScope(for: mode) == .selectedAppsOnly
         let isPromptRoutingPaused = mode.normalized == .dictate && self.viewModel.isPrimaryDictationPromptSelectionOff()
 
         VStack(alignment: .leading, spacing: 8) {
@@ -313,7 +313,7 @@ extension AIEnhancementSettingsView {
                         subtitle: self.viewModel.promptPreview(self.viewModel.defaultPromptBodyPreview(for: mode)),
                         mode: mode,
                         isSelected: mode.normalized == .dictate
-                            ? (!isFluid1Locked && !self.viewModel.isPrimaryDictationPromptSelectionOff() && self.viewModel.selectedPromptID(for: mode) == nil)
+                            ? (!isPrivateAILocked && !self.viewModel.isPrimaryDictationPromptSelectionOff() && self.viewModel.selectedPromptID(for: mode) == nil)
                             : self.viewModel.selectedPromptID(for: mode) == nil,
                         onUse: {
                             self.viewModel.setSelectedPromptID(nil, for: mode)
@@ -321,22 +321,22 @@ extension AIEnhancementSettingsView {
                         onManage: { self.viewModel.openDefaultPromptViewer(for: mode) },
                         onResetDefault: { self.viewModel.resetDefaultPromptOverride(for: mode) },
                         canResetDefault: self.viewModel.hasDefaultPromptOverride(for: mode),
-                        isEnabled: !isFluid1Locked
+                        isEnabled: !isPrivateAILocked
                     )
 
-                    if mode.normalized == .dictate {
+                    if mode.normalized == .dictate && PrivateFeatures.privateAIProvider {
                         self.promptProfileCard(
-                            cardKey: "\(mode.normalized.rawValue)-fluid-1",
-                            title: "Fluid Intelligence",
-                            subtitle: isFluid1Locked
-                                ? "Uses the Fluid Intelligence prompt."
-                                : "Select Fluid Intelligence to enable.",
+                            cardKey: "\(mode.normalized.rawValue)-\(PrivateAIProviderFeature.shared.providerID)",
+                            title: PrivateAIProviderFeature.displayName,
+                            subtitle: isPrivateAILocked
+                                ? "Uses the \(PrivateAIProviderFeature.displayName) prompt."
+                                : "Select \(PrivateAIProviderFeature.displayName) to enable.",
                             mode: mode,
-                            isSelected: self.viewModel.isFluid1PromptSelected(),
+                            isSelected: self.viewModel.isPrivateAIPromptSelected(),
                             onUse: {
-                                self.viewModel.selectFluid1PromptIfAvailable()
+                                self.viewModel.selectPrivateAIPromptIfAvailable()
                             },
-                            isEnabled: isFluid1Locked
+                            isEnabled: isPrivateAILocked
                         )
                     }
 
@@ -354,22 +354,22 @@ extension AIEnhancementSettingsView {
                                     ? "Empty prompt (uses Default)"
                                     : self.viewModel.promptPreview(SettingsStore.stripBasePrompt(for: profile.mode, from: profile.prompt)),
                                 mode: profile.mode,
-                                isSelected: !isFluid1Locked && self.viewModel.selectedPromptID(for: profile.mode) == profile.id,
+                                isSelected: !isPrivateAILocked && self.viewModel.selectedPromptID(for: profile.mode) == profile.id,
                                 onUse: {
                                     self.viewModel.setSelectedPromptID(profile.id, for: profile.mode)
                                 },
                                 onManage: { self.viewModel.openEditor(for: profile) },
                                 onDelete: { self.viewModel.requestDeletePrompt(profile) },
-                                isEnabled: !isFluid1Locked
+                                isEnabled: !isPrivateAILocked
                             )
                         }
                     }
 
-                    self.appPromptBindingsSection(mode: mode, isEnabled: !isFluid1Locked)
+                    self.appPromptBindingsSection(mode: mode, isEnabled: !isPrivateAILocked)
                 }
 
-                if isFluid1Locked {
-                    Text("Fluid Intelligence selected. Only the Fluid Intelligence prompt is available when AI Enhancement is On.")
+                if isPrivateAILocked {
+                    Text("\(PrivateAIProviderFeature.displayName) selected. Only the \(PrivateAIProviderFeature.displayName) prompt is available when AI Enhancement is On.")
                         .font(.caption2)
                         .foregroundStyle(.secondary)
                         .padding(.horizontal, 4)
@@ -423,8 +423,8 @@ extension AIEnhancementSettingsView {
                     isSelected: !isOff,
                     tone: tone,
                     action: {
-                        if mode.normalized == .dictate, self.viewModel.isFluid1ModelSelected() {
-                            self.viewModel.selectFluid1PromptIfAvailable()
+                        if mode.normalized == .dictate, self.viewModel.isPrivateAIModelSelected() {
+                            self.viewModel.selectPrivateAIPromptIfAvailable()
                         } else {
                             self.viewModel.setSelectedPromptID(nil, for: mode)
                         }
@@ -524,9 +524,9 @@ extension AIEnhancementSettingsView {
     ) -> some View {
         let selectedScope = self.viewModel.promptRoutingScope(for: mode)
         let key = "\(mode.normalized.rawValue)-\(scope.rawValue)"
-        let isFluid1Locked = mode.normalized == .dictate && self.viewModel.isFluid1ModelSelected()
-        let isSelected = isFluid1Locked ? scope == .allApps : selectedScope == scope
-        let isEnabled = !isFluid1Locked
+        let isPrivateAILocked = mode.normalized == .dictate && self.viewModel.isPrivateAIModelSelected()
+        let isSelected = isPrivateAILocked ? scope == .allApps : selectedScope == scope
+        let isEnabled = !isPrivateAILocked
         let isHovering = isEnabled && self.hoveredPromptScopeKey == key
         let tone = self.modeAccentColor(mode)
         let cornerRadius: CGFloat = 9

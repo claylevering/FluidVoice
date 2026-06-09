@@ -1,7 +1,6 @@
 import AppKit
 import Combine
 import CryptoKit
-import FluidIntelligence
 import Security
 import SwiftUI
 import UniformTypeIdentifiers
@@ -183,7 +182,7 @@ final class AIEnhancementSettingsViewModel: ObservableObject {
         }
         self.selectedModelByProvider = normalizedSel
         self.settings.selectedModelByProvider = normalizedSel
-        self.normalizeFluidIntelligenceModels()
+        self.normalizePrivateAIModels()
 
         // Determine initial model list AND set baseURL BEFORE calling updateCurrentProvider
         if let saved = savedProviders.first(where: { $0.id == selectedProviderID }) {
@@ -244,27 +243,32 @@ final class AIEnhancementSettingsViewModel: ObservableObject {
     }
 
     func providerDisplayName(for providerID: String) -> String {
+        if PrivateFeatures.privateAIProvider, providerID == PrivateAIProviderFeature.shared.providerID {
+            return ModelRepository.shared.displayName(for: providerID)
+        }
+
         switch providerID {
         case "openai": return "OpenAI"
         case "groq": return "Groq"
         case "apple-intelligence": return "Apple Intelligence"
-        case "fluid-1": return "Fluid Intelligence"
         default:
             return self.savedProviders.first(where: { $0.id == providerID })?.name ?? providerID.capitalized
         }
     }
 
-    private func normalizeFluidIntelligenceModels() {
-        let key = self.providerKey(for: "fluid-1")
-        let models = FluidModelRegistry.modelIDs()
+    private func normalizePrivateAIModels() {
+        guard PrivateFeatures.privateAIProvider else { return }
+
+        let key = self.providerKey(for: PrivateAIProviderFeature.shared.providerID)
+        let models = PrivateAIModelRegistry.modelIDs()
         let current = self.selectedModelByProvider[key] ?? ""
-        let selected = FluidModelRegistry.model(id: current)?.id ?? FluidIntelligenceIntegrationService.configuredModelID
+        let selected = PrivateAIModelRegistry.model(id: current)?.id ?? PrivateAIIntegrationService.configuredModelID
 
         self.availableModelsByProvider[key] = models
         self.selectedModelByProvider[key] = selected
         self.settings.availableModelsByProvider = self.availableModelsByProvider
         self.settings.selectedModelByProvider = self.selectedModelByProvider
-        UserDefaults.standard.set(selected, forKey: FluidIntelligenceIntegrationService.selectedModelDefaultsKey)
+        UserDefaults.standard.set(selected, forKey: PrivateAIIntegrationService.selectedModelDefaultsKey)
     }
 
     func connectionStatus(for providerID: String) -> AIConnectionStatus {
@@ -339,8 +343,8 @@ final class AIEnhancementSettingsViewModel: ObservableObject {
         self.updateConnectionStatus(.success, for: providerID)
     }
 
-    func verifyFluidIntelligence(model: FluidRegisteredModel) async -> Bool {
-        let providerID = "fluid-1"
+    func verifyPrivateAIProvider(model: PrivateAIRegisteredModel) async -> Bool {
+        let providerID = PrivateAIProviderFeature.shared.providerID
         let key = self.providerKey(for: providerID)
         guard !self.isTestingConnection else { return false }
 
@@ -352,25 +356,25 @@ final class AIEnhancementSettingsViewModel: ObservableObject {
             self.isTestingConnection = false
         }
 
-        guard FluidIntelligenceIntegrationService.isModelInstalled(model) else {
+        guard PrivateAIIntegrationService.isModelInstalled(model) else {
             self.updateConnectionStatus(.failed, for: providerID)
             self.connectionErrorMessage = "\(model.displayName) is not installed."
             return false
         }
 
         do {
-            let status = try await FluidIntelligenceIntegrationService.shared.loadModel(model)
+            let status = try await PrivateAIIntegrationService.shared.loadModel(model)
             switch status.state {
             case .ready:
                 var fingerprints = self.settings.verifiedProviderFingerprints
-                fingerprints[key] = self.fluidIntelligenceFingerprint(for: model.id)
+                fingerprints[key] = self.privateAIFingerprint(for: model.id)
                 self.settings.verifiedProviderFingerprints = fingerprints
                 self.selectedModelByProvider[key] = model.id
                 self.settings.selectedModelByProvider = self.selectedModelByProvider
                 self.updateConnectionStatus(.success, for: providerID)
                 self.connectionErrorMessage = ""
                 DebugLogger.shared.info(
-                    "Fluid Intelligence verification succeeded for \(model.id)",
+                    "Private AI Provider verification succeeded for \(model.id)",
                     source: "AISettingsView"
                 )
                 return true
@@ -381,9 +385,9 @@ final class AIEnhancementSettingsViewModel: ObservableObject {
             }
         } catch {
             self.updateConnectionStatus(.failed, for: providerID)
-            self.connectionErrorMessage = self.fluidIntelligenceErrorMessage(for: error)
+            self.connectionErrorMessage = self.privateAIErrorMessage(for: error)
             DebugLogger.shared.error(
-                "Fluid Intelligence verification failed for \(model.id): \(self.connectionErrorMessage)",
+                "Private AI Provider verification failed for \(model.id): \(self.connectionErrorMessage)",
                 source: "AISettingsView"
             )
             return false
@@ -1293,11 +1297,11 @@ final class AIEnhancementSettingsViewModel: ObservableObject {
         return digest.map { String(format: "%02x", $0) }.joined()
     }
 
-    private func fluidIntelligenceFingerprint(for modelID: String) -> String {
-        "fluid-intelligence|\(modelID)"
+    private func privateAIFingerprint(for modelID: String) -> String {
+        "private-ai-provider|\(modelID)"
     }
 
-    private func fluidIntelligenceErrorMessage(for error: Error) -> String {
+    private func privateAIErrorMessage(for error: Error) -> String {
         if let localizedError = error as? LocalizedError,
            let description = localizedError.errorDescription
         {
@@ -1349,9 +1353,9 @@ final class AIEnhancementSettingsViewModel: ObservableObject {
                 }
                 continue
             }
-            if providerID == "fluid-1" {
-                let selected = self.selectedModelByProvider[key] ?? FluidIntelligenceIntegrationService.configuredModelID
-                if self.settings.verifiedProviderFingerprints[key] == self.fluidIntelligenceFingerprint(for: selected) {
+            if providerID == PrivateAIProviderFeature.shared.providerID {
+                let selected = self.selectedModelByProvider[key] ?? PrivateAIIntegrationService.configuredModelID
+                if self.settings.verifiedProviderFingerprints[key] == self.privateAIFingerprint(for: selected) {
                     statuses[providerID] = .success
                 } else if statuses[providerID] == .success {
                     statuses[providerID] = .unknown
@@ -1765,21 +1769,21 @@ final class AIEnhancementSettingsViewModel: ObservableObject {
         return self.settings.isDictationPromptOff
     }
 
-    func isFluid1PromptAvailable() -> Bool {
-        Fluid1PromptFormat.isAvailable(settings: self.settings)
+    func isPrivateAIPromptAvailable() -> Bool {
+        PrivateAIProviderPromptFormat.isAvailable(settings: self.settings)
     }
 
-    func isFluid1ModelSelected() -> Bool {
-        Fluid1PromptFormat.isAvailable(settings: self.settings)
+    func isPrivateAIModelSelected() -> Bool {
+        PrivateAIProviderPromptFormat.isAvailable(settings: self.settings)
     }
 
-    func isFluid1PromptSelected() -> Bool {
-        self.settings.dictationPromptSelection == .fluid1
+    func isPrivateAIPromptSelected() -> Bool {
+        self.settings.dictationPromptSelection == .privateAI
     }
 
-    func selectFluid1PromptIfAvailable() {
-        guard self.isFluid1PromptAvailable() else { return }
-        self.settings.setDictationPromptSelection(.fluid1)
+    func selectPrivateAIPromptIfAvailable() {
+        guard self.isPrivateAIPromptAvailable() else { return }
+        self.settings.setDictationPromptSelection(.privateAI)
         self.selectedDictationPromptID = self.settings.selectedDictationPromptID
         self.isDictationPromptOff = self.settings.isDictationPromptOff
     }
@@ -1871,9 +1875,9 @@ final class AIEnhancementSettingsViewModel: ObservableObject {
 
     func setSelectedPromptID(_ id: String?, for mode: SettingsStore.PromptMode) {
         if mode.normalized == .dictate {
-            if self.isFluid1ModelSelected() {
+            if self.isPrivateAIModelSelected() {
                 if id == nil {
-                    self.settings.setDictationPromptSelection(.fluid1)
+                    self.settings.setDictationPromptSelection(.privateAI)
                 }
             } else if let id {
                 self.settings.setDictationPromptSelection(.profile(id))

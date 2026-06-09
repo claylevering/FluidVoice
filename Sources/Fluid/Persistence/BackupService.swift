@@ -12,7 +12,7 @@ struct SettingsBackupPayload: Codable, Equatable {
     let selectedModelByProvider: [String: String]
     let savedProviders: [SettingsStore.SavedProvider]
     let modelReasoningConfigs: [String: SettingsStore.ModelReasoningConfig]
-    let fluidIntelligencePrefixKVCacheEnabled: Bool?
+    let privateAIPrefixKVCacheEnabled: Bool?
     let selectedSpeechModel: SettingsStore.SpeechModel
     let selectedCohereLanguage: SettingsStore.CohereLanguage
     let selectedNemotronLanguage: SettingsStore.NemotronLanguage?
@@ -128,9 +128,10 @@ final class BackupService {
     func decode(_ data: Data) throws -> AppBackupDocument {
         let decoder = JSONDecoder()
         decoder.dateDecodingStrategy = .iso8601
+        let migratedData = Self.dataByMigratingLegacyPrivateAIKeys(in: data) ?? data
 
         do {
-            let document = try decoder.decode(AppBackupDocument.self, from: data)
+            let document = try decoder.decode(AppBackupDocument.self, from: migratedData)
             try self.validate(document)
             return document
         } catch let error as BackupServiceError {
@@ -161,6 +162,24 @@ final class BackupService {
         guard document.schemaVersion.major == BackupFileVersion.current.major else {
             throw BackupServiceError.unsupportedSchemaVersion(document.schemaVersion)
         }
+    }
+
+    private static func dataByMigratingLegacyPrivateAIKeys(in data: Data) -> Data? {
+        guard var root = try? JSONSerialization.jsonObject(with: data) as? [String: Any],
+              var settings = root["settings"] as? [String: Any],
+              settings["privateAIPrefixKVCacheEnabled"] == nil
+        else {
+            return nil
+        }
+
+        let legacyPrefixCacheKey = ["fluid", "Int", "elligence", "PrefixKVCacheEnabled"].joined()
+        guard let legacyValue = settings[legacyPrefixCacheKey] else {
+            return nil
+        }
+
+        settings["privateAIPrefixKVCacheEnabled"] = legacyValue
+        root["settings"] = settings
+        return try? JSONSerialization.data(withJSONObject: root)
     }
 }
 

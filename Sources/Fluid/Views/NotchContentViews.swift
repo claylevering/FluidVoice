@@ -675,7 +675,7 @@ struct NotchExpandedView: View {
     private func promptMenuContent() -> some View {
         let promptMode = self.activePromptMode ?? .dictate
         let activeDictationSlot = self.activeDictationShortcutSlot
-        let fluid1Locked = promptMode.normalized == .dictate && Fluid1PromptFormat.isAvailable(settings: self.settings)
+        let privateAILocked = promptMode.normalized == .dictate && PrivateAIProviderPromptFormat.isAvailable(settings: self.settings)
         return VStack(alignment: .leading, spacing: 2) {
             Text("AI Prompt")
                 .font(.system(size: 8, weight: .semibold))
@@ -703,7 +703,7 @@ struct NotchExpandedView: View {
                         }
                     }
 
-                    if !fluid1Locked {
+                    if !privateAILocked {
                         self.promptMenuRow("Default", rowID: "default", isSelected: defaultSelected) {
                             if promptMode.normalized == .dictate {
                                 self.contentState.onDictationPromptSelectionRequested?(.default)
@@ -715,21 +715,21 @@ struct NotchExpandedView: View {
                         }
                     }
 
-                    if promptMode.normalized == .dictate {
-                        let fluid1Available = Fluid1PromptFormat.isAvailable(settings: self.settings)
+                    if promptMode.normalized == .dictate && PrivateFeatures.privateAIProvider {
+                        let privateAIAvailable = PrivateAIProviderPromptFormat.isAvailable(settings: self.settings)
                         self.promptMenuRow(
-                            "Fluid Intelligence",
-                            rowID: "fluid-1",
-                            isSelected: self.settings.dictationPromptSelection(for: activeDictationSlot) == .fluid1,
-                            isEnabled: fluid1Available
+                            PrivateAIProviderFeature.displayName,
+                            rowID: PrivateAIProviderFeature.shared.providerID,
+                            isSelected: self.settings.dictationPromptSelection(for: activeDictationSlot) == .privateAI,
+                            isEnabled: privateAIAvailable
                         ) {
-                            self.contentState.onDictationPromptSelectionRequested?(.fluid1)
+                            self.contentState.onDictationPromptSelectionRequested?(.privateAI)
                             self.restoreRecordingTargetFocus()
                             self.dismissPromptHoverMenu()
                         }
                     }
 
-                    let profiles = fluid1Locked ? [] : self.settings.promptProfiles(for: promptMode)
+                    let profiles = privateAILocked ? [] : self.settings.promptProfiles(for: promptMode)
                     if !profiles.isEmpty {
                         ForEach(profiles) { profile in
                             let isSelected = promptMode.normalized == .dictate

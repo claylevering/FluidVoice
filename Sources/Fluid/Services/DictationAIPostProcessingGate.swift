@@ -13,8 +13,8 @@ enum DictationAIPostProcessingGate {
     static func isConfigured(for slot: SettingsStore.DictationShortcutSlot, appBundleID: String? = nil) -> Bool {
         let settings = SettingsStore.shared
         guard settings.dictationPromptSelection(for: slot) != .off else { return false }
-        if Fluid1PromptFormat.isAvailable(settings: settings) {
-            if FluidIntelligenceIntegrationService.isLocalRuntimeConfigured {
+        if PrivateAIProviderPromptFormat.isAvailable(settings: settings) {
+            if PrivateAIIntegrationService.isLocalRuntimeConfigured {
                 return true
             }
             return self.isProviderConfigured()

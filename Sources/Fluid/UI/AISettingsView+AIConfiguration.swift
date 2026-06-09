@@ -6,7 +6,6 @@
 //
 
 import AppKit
-import FluidIntelligence
 import SwiftUI
 
 // MARK: - Conditional Drawing Group Modifier
@@ -396,7 +395,7 @@ extension AIEnhancementSettingsView {
         let isBuiltIn: Bool
     }
 
-    private struct FluidIntelligenceModelStatus {
+    private struct PrivateAIProviderModelStatus {
         let title: String
         let detail: String
         let icon: String
@@ -419,7 +418,7 @@ extension AIEnhancementSettingsView {
 
     private func providerCard(_ item: ProviderItem) -> some View {
         let isAppleDisabled = item.id == "apple-intelligence-disabled"
-        let isFluidIntelligence = item.id == "fluid-1"
+        let isPrivateAIProvider = item.id == PrivateAIProviderFeature.shared.providerID
         let isComingSoon = isAppleDisabled
         let isExpanded = self.expandedProviderID == item.id && !isAppleDisabled
         let status = self.providerStatus(for: item)
@@ -480,8 +479,8 @@ extension AIEnhancementSettingsView {
                     .background(self.theme.palette.separator.opacity(0.5))
                     .padding(.horizontal, 14)
 
-                if isFluidIntelligence {
-                    self.fluidIntelligenceRuntimeSection
+                if isPrivateAIProvider {
+                    self.privateAIRuntimeSection
                         .padding(14)
                         .padding(.top, 4)
                 } else {
@@ -537,17 +536,17 @@ extension AIEnhancementSettingsView {
         }
     }
 
-    private var fluidIntelligenceRuntimeSection: some View {
-        let model = self.selectedFluidIntelligenceModel
-        let status = self.fluidIntelligenceModelStatus(for: model)
-        let isInstalled = FluidIntelligenceIntegrationService.isModelInstalled(model)
-        let isDownloading = self.fluidIntelligenceLoadState.isDownloading(model.id)
-        let isLoading = self.fluidIntelligenceLoadState.isLoading(model.id)
-        let isLoaded = self.fluidIntelligenceLoadState.isLoaded(model.id)
-        let hasLoadFailure = self.fluidIntelligenceLoadState.failureMessage(for: model.id) != nil
-        let isTesting = self.viewModel.isTestingConnection && self.viewModel.selectedProviderID == "fluid-1"
+    private var privateAIRuntimeSection: some View {
+        let model = self.selectedPrivateAIModel
+        let status = self.privateAIModelStatus(for: model)
+        let isInstalled = PrivateAIIntegrationService.isModelInstalled(model)
+        let isDownloading = self.privateAILoadState.isDownloading(model.id)
+        let isLoading = self.privateAILoadState.isLoading(model.id)
+        let isLoaded = self.privateAILoadState.isLoaded(model.id)
+        let hasLoadFailure = self.privateAILoadState.failureMessage(for: model.id) != nil
+        let isTesting = self.viewModel.isTestingConnection && self.viewModel.selectedProviderID == PrivateAIProviderFeature.shared.providerID
         let isBusy = isDownloading || isLoading || isTesting
-        let canVerify = isInstalled && !self.fluidIntelligenceSelectedModelID.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty
+        let canVerify = isInstalled && !self.privateAISelectedModelID.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty
 
         return VStack(alignment: .leading, spacing: 10) {
             HStack(spacing: 10) {
@@ -557,11 +556,11 @@ extension AIEnhancementSettingsView {
                     .frame(width: 50, alignment: .leading)
 
                 SearchableModelPicker(
-                    models: FluidModelRegistry.modelIDs(),
-                    selectedModel: self.fluidIntelligenceModelBinding,
+                    models: PrivateAIModelRegistry.modelIDs(),
+                    selectedModel: self.privateAIModelBinding,
                     onRefresh: {
                         await MainActor.run {
-                            self.refreshFluidIntelligenceProviderModels()
+                            self.refreshPrivateAIProviderModels()
                         }
                     },
                     isRefreshing: false,
@@ -571,7 +570,7 @@ extension AIEnhancementSettingsView {
                     controlHeight: 30
                 )
 
-                Button(action: { self.loadFluidIntelligenceModel(model) }) {
+                Button(action: { self.loadPrivateAIModel(model) }) {
                     if isLoading {
                         ProgressView()
                             .controlSize(.mini)
@@ -586,7 +585,7 @@ extension AIEnhancementSettingsView {
                 .disabled(!isInstalled || isBusy)
                 .help("Load selected model")
 
-                Button(action: { self.unloadFluidIntelligenceModel() }) {
+                Button(action: { self.unloadPrivateAIModel() }) {
                     Image(systemName: "eject")
                         .font(.system(size: 12, weight: .semibold))
                 }
@@ -595,7 +594,7 @@ extension AIEnhancementSettingsView {
                 .disabled(isBusy || !isLoaded)
                 .help("Unload selected model")
 
-                Button(action: { self.revealFluidIntelligenceModelFolder() }) {
+                Button(action: { self.revealPrivateAIModelFolder() }) {
                     Image(systemName: "folder")
                         .font(.system(size: 12, weight: .semibold))
                 }
@@ -604,7 +603,7 @@ extension AIEnhancementSettingsView {
                 .help("Open models folder")
 
                 if !isInstalled {
-                    Button(action: { self.downloadFluidIntelligenceModel(model) }) {
+                    Button(action: { self.downloadPrivateAIModel(model) }) {
                         if isDownloading {
                             ProgressView()
                                 .controlSize(.mini)
@@ -632,9 +631,9 @@ extension AIEnhancementSettingsView {
                 .foregroundStyle(status.color)
             }
 
-            self.fluidIntelligencePrefixCacheRow(isBusy: isBusy)
+            self.privateAIPrefixCacheRow(isBusy: isBusy)
 
-            if self.viewModel.connectionStatus(for: "fluid-1") == .failed,
+            if self.viewModel.connectionStatus(for: PrivateAIProviderFeature.shared.providerID) == .failed,
                !self.viewModel.connectionErrorMessage.isEmpty
             {
                 HStack(spacing: 6) {
@@ -653,7 +652,7 @@ extension AIEnhancementSettingsView {
             }
 
             if canVerify {
-                Button(action: { self.verifyFluidIntelligenceConnection(model) }) {
+                Button(action: { self.verifyPrivateAIConnection(model) }) {
                     HStack(spacing: 6) {
                         if isTesting {
                             ProgressView()
@@ -670,7 +669,7 @@ extension AIEnhancementSettingsView {
                 .buttonStyle(AccentButtonStyle(compact: true))
                 .disabled(isBusy)
             } else if model.canDownload {
-                Button(action: { self.downloadFluidIntelligenceModel(model) }) {
+                Button(action: { self.downloadPrivateAIModel(model) }) {
                     HStack(spacing: 6) {
                         if isDownloading {
                             ProgressView()
@@ -698,14 +697,14 @@ extension AIEnhancementSettingsView {
         }
     }
 
-    private func fluidIntelligencePrefixCacheRow(isBusy: Bool) -> some View {
+    private func privateAIPrefixCacheRow(isBusy: Bool) -> some View {
         HStack(spacing: 8) {
             Image(systemName: "bolt.horizontal.circle")
                 .font(.caption)
                 .foregroundStyle(self.theme.palette.accent)
                 .frame(width: 16)
 
-            Toggle("Prefix cache", isOn: self.fluidIntelligencePrefixCacheBinding)
+            Toggle("Prefix cache", isOn: self.privateAIPrefixCacheBinding)
                 .toggleStyle(.switch)
                 .controlSize(.mini)
                 .font(.caption)
@@ -716,15 +715,15 @@ extension AIEnhancementSettingsView {
         }
     }
 
-    private var fluidIntelligencePrefixCacheBinding: Binding<Bool> {
+    private var privateAIPrefixCacheBinding: Binding<Bool> {
         Binding(
-            get: { self.settings.fluidIntelligencePrefixKVCacheEnabled },
+            get: { self.settings.privateAIPrefixKVCacheEnabled },
             set: { enabled in
-                guard self.settings.fluidIntelligencePrefixKVCacheEnabled != enabled else { return }
-                self.settings.fluidIntelligencePrefixKVCacheEnabled = enabled
-                self.fluidIntelligenceLoadState = .idle
+                guard self.settings.privateAIPrefixKVCacheEnabled != enabled else { return }
+                self.settings.privateAIPrefixKVCacheEnabled = enabled
+                self.privateAILoadState = .idle
                 Task { @MainActor in
-                    await FluidIntelligenceIntegrationService.shared.unloadCachedRuntime(
+                    await PrivateAIIntegrationService.shared.unloadCachedRuntime(
                         reason: enabled ? "prefix cache enabled" : "prefix cache disabled"
                     )
                     self.viewModel.refreshProviderItems()
@@ -733,60 +732,60 @@ extension AIEnhancementSettingsView {
         )
     }
 
-    private var fluidIntelligenceModelBinding: Binding<String> {
+    private var privateAIModelBinding: Binding<String> {
         Binding(
-            get: { self.fluidIntelligenceSelectedModelID },
-            set: { self.persistFluidIntelligenceModelSelection($0) }
+            get: { self.privateAISelectedModelID },
+            set: { self.persistPrivateAIModelSelection($0) }
         )
     }
 
-    private func refreshFluidIntelligenceProviderModels() {
-        let providerKey = self.viewModel.providerKey(for: "fluid-1")
-        let models = FluidModelRegistry.modelIDs()
-        let selected = FluidModelRegistry.canonicalModelID(for: self.fluidIntelligenceSelectedModelID) ?? FluidModelRegistry.defaultModel.id
+    private func refreshPrivateAIProviderModels() {
+        let providerKey = self.viewModel.providerKey(for: PrivateAIProviderFeature.shared.providerID)
+        let models = PrivateAIModelRegistry.modelIDs()
+        let selected = PrivateAIModelRegistry.canonicalModelID(for: self.privateAISelectedModelID) ?? PrivateAIModelRegistry.defaultModel.id
 
-        self.fluidIntelligenceSelectedModelID = selected
+        self.privateAISelectedModelID = selected
         self.viewModel.availableModelsByProvider[providerKey] = models
         self.viewModel.selectedModelByProvider[providerKey] = selected
         self.viewModel.settings.availableModelsByProvider = self.viewModel.availableModelsByProvider
         self.viewModel.settings.selectedModelByProvider = self.viewModel.selectedModelByProvider
 
-        if self.viewModel.selectedProviderID == "fluid-1" {
+        if self.viewModel.selectedProviderID == PrivateAIProviderFeature.shared.providerID {
             self.viewModel.availableModels = models
             self.viewModel.selectedModel = selected
         }
 
-        self.refreshFluidIntelligenceLoadState()
+        self.refreshPrivateAILoadState()
         self.viewModel.refreshProviderItems()
     }
 
-    private func downloadFluidIntelligenceModel(_ model: FluidRegisteredModel) {
+    private func downloadPrivateAIModel(_ model: PrivateAIRegisteredModel) {
         guard model.canDownload else {
-            self.fluidIntelligenceLoadState = .failed(modelID: model.id, message: "Download URL is not configured yet.")
+            self.privateAILoadState = .failed(modelID: model.id, message: "Download URL is not configured yet.")
             return
         }
 
-        self.fluidIntelligenceLoadState = .downloading(modelID: model.id)
+        self.privateAILoadState = .downloading(modelID: model.id)
         Task { @MainActor in
             do {
-                _ = try await FluidIntelligenceIntegrationService.prepareModel(model)
-                guard self.fluidIntelligenceSelectedModelID == model.id else { return }
-                self.fluidIntelligenceLoadState = .loading(modelID: model.id)
+                _ = try await PrivateAIIntegrationService.prepareModel(model)
+                guard self.privateAISelectedModelID == model.id else { return }
+                self.privateAILoadState = .loading(modelID: model.id)
                 let start = ContinuousClock.now
-                let verified = await self.viewModel.verifyFluidIntelligence(model: model)
+                let verified = await self.viewModel.verifyPrivateAIProvider(model: model)
                 let latencyMilliseconds = Self.elapsedMilliseconds(since: start)
-                guard self.fluidIntelligenceSelectedModelID == model.id else { return }
+                guard self.privateAISelectedModelID == model.id else { return }
                 if verified {
-                    self.fluidIntelligenceLoadState = .loaded(modelID: model.id, latencyMilliseconds: latencyMilliseconds)
+                    self.privateAILoadState = .loaded(modelID: model.id, latencyMilliseconds: latencyMilliseconds)
                 } else {
                     let message = self.viewModel.connectionErrorMessage.isEmpty
                         ? "Model downloaded, but verification failed."
                         : self.viewModel.connectionErrorMessage
-                    self.fluidIntelligenceLoadState = .failed(modelID: model.id, message: message)
+                    self.privateAILoadState = .failed(modelID: model.id, message: message)
                 }
             } catch {
-                guard self.fluidIntelligenceSelectedModelID == model.id else { return }
-                self.fluidIntelligenceLoadState = .failed(
+                guard self.privateAISelectedModelID == model.id else { return }
+                self.privateAILoadState = .failed(
                     modelID: model.id,
                     message: Self.errorMessage(for: error)
                 )
@@ -795,34 +794,34 @@ extension AIEnhancementSettingsView {
         }
     }
 
-    private func verifyFluidIntelligenceConnection(_ model: FluidRegisteredModel) {
-        self.fluidIntelligenceLoadState = .loading(modelID: model.id)
+    private func verifyPrivateAIConnection(_ model: PrivateAIRegisteredModel) {
+        self.privateAILoadState = .loading(modelID: model.id)
         Task { @MainActor in
             let start = ContinuousClock.now
-            let verified = await self.viewModel.verifyFluidIntelligence(model: model)
+            let verified = await self.viewModel.verifyPrivateAIProvider(model: model)
             let latencyMilliseconds = Self.elapsedMilliseconds(since: start)
-            guard self.fluidIntelligenceSelectedModelID == model.id else { return }
+            guard self.privateAISelectedModelID == model.id else { return }
             if verified {
-                self.fluidIntelligenceLoadState = .loaded(modelID: model.id, latencyMilliseconds: latencyMilliseconds)
+                self.privateAILoadState = .loaded(modelID: model.id, latencyMilliseconds: latencyMilliseconds)
             } else {
                 let message = self.viewModel.connectionErrorMessage.isEmpty
                     ? "Model verification failed."
                     : self.viewModel.connectionErrorMessage
-                self.fluidIntelligenceLoadState = .failed(modelID: model.id, message: message)
+                self.privateAILoadState = .failed(modelID: model.id, message: message)
             }
             self.viewModel.refreshProviderItems()
         }
     }
 
-    private var selectedFluidIntelligenceModel: FluidRegisteredModel {
-        FluidModelRegistry.model(id: self.fluidIntelligenceSelectedModelID) ?? FluidModelRegistry.defaultModel
+    private var selectedPrivateAIModel: PrivateAIRegisteredModel {
+        PrivateAIModelRegistry.model(id: self.privateAISelectedModelID) ?? PrivateAIModelRegistry.defaultModel
     }
 
-    private func fluidIntelligenceModelStatus(
-        for model: FluidRegisteredModel
-    ) -> FluidIntelligenceModelStatus {
-        if self.fluidIntelligenceLoadState.isDownloading(model.id) {
-            return FluidIntelligenceModelStatus(
+    private func privateAIModelStatus(
+        for model: PrivateAIRegisteredModel
+    ) -> PrivateAIProviderModelStatus {
+        if self.privateAILoadState.isDownloading(model.id) {
+            return PrivateAIProviderModelStatus(
                 title: "Downloading model",
                 detail: "Downloading \(model.displayName). This can take a few minutes on first setup.",
                 icon: "arrow.down.circle.fill",
@@ -831,8 +830,8 @@ extension AIEnhancementSettingsView {
             )
         }
 
-        if self.fluidIntelligenceLoadState.isLoading(model.id) {
-            return FluidIntelligenceModelStatus(
+        if self.privateAILoadState.isLoading(model.id) {
+            return PrivateAIProviderModelStatus(
                 title: "Loading model",
                 detail: "\(model.displayName) is warming into memory.",
                 icon: "arrow.triangle.2.circlepath",
@@ -841,9 +840,9 @@ extension AIEnhancementSettingsView {
             )
         }
 
-        if self.fluidIntelligenceLoadState.isLoaded(model.id) {
-            let latency = self.fluidIntelligenceLoadState.latencyMilliseconds(for: model.id)
-            return FluidIntelligenceModelStatus(
+        if self.privateAILoadState.isLoaded(model.id) {
+            let latency = self.privateAILoadState.latencyMilliseconds(for: model.id)
+            return PrivateAIProviderModelStatus(
                 title: "Model loaded",
                 detail: "\(model.displayName) loaded\(Self.loadDurationText(latency)) and will stay warm until unloaded or switched.",
                 icon: "memorychip.fill",
@@ -852,8 +851,8 @@ extension AIEnhancementSettingsView {
             )
         }
 
-        if let message = self.fluidIntelligenceLoadState.failureMessage(for: model.id) {
-            return FluidIntelligenceModelStatus(
+        if let message = self.privateAILoadState.failureMessage(for: model.id) {
+            return PrivateAIProviderModelStatus(
                 title: "Load failed",
                 detail: message,
                 icon: "exclamationmark.triangle.fill",
@@ -862,8 +861,8 @@ extension AIEnhancementSettingsView {
             )
         }
 
-        if FluidIntelligenceIntegrationService.isModelInstalled(model) {
-            return FluidIntelligenceModelStatus(
+        if PrivateAIIntegrationService.isModelInstalled(model) {
+            return PrivateAIProviderModelStatus(
                 title: "Local model ready",
                 detail: "\(model.displayName) is installed. Load it to keep it warm in memory.",
                 icon: "checkmark.circle.fill",
@@ -872,8 +871,8 @@ extension AIEnhancementSettingsView {
             )
         }
 
-        if FluidIntelligenceIntegrationService.isLocalRuntimeConfigured {
-            return FluidIntelligenceModelStatus(
+        if PrivateAIIntegrationService.isLocalRuntimeConfigured {
+            return PrivateAIProviderModelStatus(
                 title: "Local override ready",
                 detail: "A local GGUF override is configured for this developer build.",
                 icon: "checkmark.circle.fill",
@@ -883,7 +882,7 @@ extension AIEnhancementSettingsView {
         }
 
         if model.canDownload {
-            return FluidIntelligenceModelStatus(
+            return PrivateAIProviderModelStatus(
                 title: "Download available",
                 detail: "\(model.displayName) can be downloaded and verified locally.",
                 icon: "arrow.down.circle.fill",
@@ -892,7 +891,7 @@ extension AIEnhancementSettingsView {
             )
         }
 
-        return FluidIntelligenceModelStatus(
+        return PrivateAIProviderModelStatus(
             title: "Model not installed",
             detail: "Waiting for the Hugging Face URL/checksum to be locked in the registry.",
             icon: "externaldrive.badge.questionmark",
@@ -901,57 +900,57 @@ extension AIEnhancementSettingsView {
         )
     }
 
-    private func revealFluidIntelligenceModelFolder() {
-        let directoryURL = FluidIntelligenceIntegrationService.modelDirectoryURL
+    private func revealPrivateAIModelFolder() {
+        let directoryURL = PrivateAIIntegrationService.modelDirectoryURL
         do {
             try FileManager.default.createDirectory(at: directoryURL, withIntermediateDirectories: true)
             NSWorkspace.shared.open(directoryURL)
         } catch {
             DebugLogger.shared.error(
-                "Failed to open Fluid Intelligence models folder: \(error.localizedDescription)",
+                "Failed to open Private AI Provider models folder: \(error.localizedDescription)",
                 source: "AISettingsView"
             )
         }
     }
 
-    func refreshFluidIntelligenceLoadState() {
+    func refreshPrivateAILoadState() {
         Task { @MainActor in
-            guard let loaded = await FluidIntelligenceIntegrationService.shared.loadedModelState(),
+            guard let loaded = await PrivateAIIntegrationService.shared.loadedModelState(),
                   loaded.state == .ready
             else {
-                self.fluidIntelligenceLoadState = .idle
+                self.privateAILoadState = .idle
                 return
             }
 
-            self.fluidIntelligenceLoadState = .loaded(modelID: loaded.modelID, latencyMilliseconds: nil)
+            self.privateAILoadState = .loaded(modelID: loaded.modelID, latencyMilliseconds: nil)
         }
     }
 
-    private func loadFluidIntelligenceModel(_ model: FluidRegisteredModel) {
-        guard FluidIntelligenceIntegrationService.isModelInstalled(model) else {
-            self.fluidIntelligenceLoadState = .failed(modelID: model.id, message: "Model file is not installed.")
+    private func loadPrivateAIModel(_ model: PrivateAIRegisteredModel) {
+        guard PrivateAIIntegrationService.isModelInstalled(model) else {
+            self.privateAILoadState = .failed(modelID: model.id, message: "Model file is not installed.")
             return
         }
 
-        self.fluidIntelligenceLoadState = .loading(modelID: model.id)
+        self.privateAILoadState = .loading(modelID: model.id)
         Task { @MainActor in
             do {
                 let start = ContinuousClock.now
-                let status = try await FluidIntelligenceIntegrationService.shared.loadModel(model)
+                let status = try await PrivateAIIntegrationService.shared.loadModel(model)
                 let latencyMilliseconds = Self.elapsedMilliseconds(since: start)
-                guard self.fluidIntelligenceSelectedModelID == model.id else { return }
+                guard self.privateAISelectedModelID == model.id else { return }
                 switch status.state {
                 case .ready:
-                    self.fluidIntelligenceLoadState = .loaded(modelID: model.id, latencyMilliseconds: latencyMilliseconds)
+                    self.privateAILoadState = .loaded(modelID: model.id, latencyMilliseconds: latencyMilliseconds)
                 default:
-                    self.fluidIntelligenceLoadState = .failed(
+                    self.privateAILoadState = .failed(
                         modelID: model.id,
                         message: status.message ?? "Model did not report ready."
                     )
                 }
             } catch {
-                guard self.fluidIntelligenceSelectedModelID == model.id else { return }
-                self.fluidIntelligenceLoadState = .failed(
+                guard self.privateAISelectedModelID == model.id else { return }
+                self.privateAILoadState = .failed(
                     modelID: model.id,
                     message: Self.errorMessage(for: error)
                 )
@@ -960,10 +959,10 @@ extension AIEnhancementSettingsView {
         }
     }
 
-    private func unloadFluidIntelligenceModel() {
-        self.fluidIntelligenceLoadState = .idle
+    private func unloadPrivateAIModel() {
+        self.privateAILoadState = .idle
         Task { @MainActor in
-            await FluidIntelligenceIntegrationService.shared.unloadCachedRuntime(reason: "user")
+            await PrivateAIIntegrationService.shared.unloadCachedRuntime(reason: "user")
             self.viewModel.refreshProviderItems()
         }
     }
@@ -991,30 +990,30 @@ extension AIEnhancementSettingsView {
         return " in \(milliseconds)ms"
     }
 
-    private func persistFluidIntelligenceModelSelection(_ value: String) {
-        let model = FluidModelRegistry.model(id: value) ?? FluidModelRegistry.defaultModel
-        let providerKey = self.viewModel.providerKey(for: "fluid-1")
-        let models = FluidModelRegistry.modelIDs()
+    private func persistPrivateAIModelSelection(_ value: String) {
+        let model = PrivateAIModelRegistry.model(id: value) ?? PrivateAIModelRegistry.defaultModel
+        let providerKey = self.viewModel.providerKey(for: PrivateAIProviderFeature.shared.providerID)
+        let models = PrivateAIModelRegistry.modelIDs()
 
-        self.fluidIntelligenceSelectedModelID = model.id
-        UserDefaults.standard.set(model.id, forKey: FluidIntelligenceIntegrationService.selectedModelDefaultsKey)
-        UserDefaults.standard.removeObject(forKey: FluidIntelligenceIntegrationService.localModelPathDefaultsKey)
+        self.privateAISelectedModelID = model.id
+        UserDefaults.standard.set(model.id, forKey: PrivateAIIntegrationService.selectedModelDefaultsKey)
+        UserDefaults.standard.removeObject(forKey: PrivateAIIntegrationService.localModelPathDefaultsKey)
 
         self.viewModel.availableModelsByProvider[providerKey] = models
         self.viewModel.selectedModelByProvider[providerKey] = model.id
         self.viewModel.settings.availableModelsByProvider = self.viewModel.availableModelsByProvider
         self.viewModel.settings.selectedModelByProvider = self.viewModel.selectedModelByProvider
 
-        if self.viewModel.selectedProviderID == "fluid-1" {
+        if self.viewModel.selectedProviderID == PrivateAIProviderFeature.shared.providerID {
             self.viewModel.availableModels = models
             self.viewModel.selectedModel = model.id
         }
-        self.viewModel.resetVerification(for: "fluid-1")
+        self.viewModel.resetVerification(for: PrivateAIProviderFeature.shared.providerID)
         self.viewModel.refreshProviderItems()
-        if FluidIntelligenceIntegrationService.isModelInstalled(model) {
-            self.loadFluidIntelligenceModel(model)
+        if PrivateAIIntegrationService.isModelInstalled(model) {
+            self.loadPrivateAIModel(model)
         } else {
-            self.fluidIntelligenceLoadState = .idle
+            self.privateAILoadState = .idle
         }
     }
 
@@ -1365,15 +1364,15 @@ extension AIEnhancementSettingsView {
         let providerKey = self.viewModel.providerKey(for: item.id)
         let models = self.viewModel.availableModelsByProvider[providerKey] ?? []
         let isSelected = item.id == self.viewModel.selectedProviderID
-        let isFluidIntelligence = item.id == "fluid-1"
-        let fluidModel = self.selectedFluidIntelligenceModel
-        let fluidStatus = self.fluidIntelligenceModelStatus(for: fluidModel)
-        let isFluidInstalled = FluidIntelligenceIntegrationService.isModelInstalled(fluidModel)
-        let isFluidDownloading = self.fluidIntelligenceLoadState.isDownloading(fluidModel.id)
-        let isFluidLoading = self.fluidIntelligenceLoadState.isLoading(fluidModel.id)
-        let isFluidLoaded = self.fluidIntelligenceLoadState.isLoaded(fluidModel.id)
-        let hasFluidLoadFailure = self.fluidIntelligenceLoadState.failureMessage(for: fluidModel.id) != nil
-        let isFluidTesting = self.viewModel.isTestingConnection && self.viewModel.selectedProviderID == "fluid-1"
+        let isPrivateAIProvider = item.id == PrivateAIProviderFeature.shared.providerID
+        let fluidModel = self.selectedPrivateAIModel
+        let fluidStatus = self.privateAIModelStatus(for: fluidModel)
+        let isFluidInstalled = PrivateAIIntegrationService.isModelInstalled(fluidModel)
+        let isFluidDownloading = self.privateAILoadState.isDownloading(fluidModel.id)
+        let isFluidLoading = self.privateAILoadState.isLoading(fluidModel.id)
+        let isFluidLoaded = self.privateAILoadState.isLoaded(fluidModel.id)
+        let hasFluidLoadFailure = self.privateAILoadState.failureMessage(for: fluidModel.id) != nil
+        let isFluidTesting = self.viewModel.isTestingConnection && self.viewModel.selectedProviderID == PrivateAIProviderFeature.shared.providerID
         let isFluidBusy = isFluidDownloading || isFluidLoading || isFluidTesting
         let isRefreshing = self.viewModel.isFetchingModels && self.viewModel.selectedProviderID == item.id
         let baseURL = self.providerBaseURL(for: item).trimmingCharacters(in: .whitespacesAndNewlines)
@@ -1412,12 +1411,12 @@ extension AIEnhancementSettingsView {
                 Spacer()
 
                 SearchableModelPicker(
-                    models: isFluidIntelligence ? FluidModelRegistry.modelIDs() : models,
-                    selectedModel: isFluidIntelligence ? self.fluidIntelligenceModelBinding : self.modelBinding(for: item.id),
+                    models: isPrivateAIProvider ? PrivateAIModelRegistry.modelIDs() : models,
+                    selectedModel: isPrivateAIProvider ? self.privateAIModelBinding : self.modelBinding(for: item.id),
                     onRefresh: {
-                        if isFluidIntelligence {
+                        if isPrivateAIProvider {
                             await MainActor.run {
-                                self.refreshFluidIntelligenceProviderModels()
+                                self.refreshPrivateAIProviderModels()
                             }
                         } else {
                             self.activateProvider(item.id)
@@ -1425,14 +1424,14 @@ extension AIEnhancementSettingsView {
                         }
                     },
                     isRefreshing: isRefreshing,
-                    refreshEnabled: isFluidIntelligence ? true : canFetchModels,
-                    selectionEnabled: isFluidIntelligence ? !isFluidBusy : hasModels,
+                    refreshEnabled: isPrivateAIProvider ? true : canFetchModels,
+                    selectionEnabled: isPrivateAIProvider ? !isFluidBusy : hasModels,
                     controlWidth: 180,
                     controlHeight: 28
                 )
 
-                if isFluidIntelligence {
-                    Button(action: { self.loadFluidIntelligenceModel(fluidModel) }) {
+                if isPrivateAIProvider {
+                    Button(action: { self.loadPrivateAIModel(fluidModel) }) {
                         if isFluidLoading {
                             ProgressView()
                                 .controlSize(.mini)
@@ -1447,7 +1446,7 @@ extension AIEnhancementSettingsView {
                     .disabled(!isFluidInstalled || isFluidBusy)
                     .help("Load selected model")
 
-                    Button(action: { self.unloadFluidIntelligenceModel() }) {
+                    Button(action: { self.unloadPrivateAIModel() }) {
                         Image(systemName: "eject")
                             .font(.system(size: 12, weight: .semibold))
                     }
@@ -1456,7 +1455,7 @@ extension AIEnhancementSettingsView {
                     .disabled(isFluidBusy || !isFluidLoaded)
                     .help("Unload selected model")
 
-                    Button(action: { self.revealFluidIntelligenceModelFolder() }) {
+                    Button(action: { self.revealPrivateAIModelFolder() }) {
                         Image(systemName: "folder")
                             .font(.system(size: 12, weight: .semibold))
                     }
@@ -1465,7 +1464,7 @@ extension AIEnhancementSettingsView {
                     .help("Open models folder")
 
                     if !isFluidInstalled {
-                        Button(action: { self.downloadFluidIntelligenceModel(fluidModel) }) {
+                        Button(action: { self.downloadPrivateAIModel(fluidModel) }) {
                             if isFluidDownloading {
                                 ProgressView()
                                     .controlSize(.mini)
@@ -1497,7 +1496,7 @@ extension AIEnhancementSettingsView {
                 }
             }
 
-            if isFluidIntelligence, isFluidDownloading || isFluidLoading || isFluidLoaded || hasFluidLoadFailure || !isFluidInstalled {
+            if isPrivateAIProvider, isFluidDownloading || isFluidLoading || isFluidLoaded || hasFluidLoadFailure || !isFluidInstalled {
                 HStack(spacing: 6) {
                     Image(systemName: fluidStatus.detailIcon)
                         .font(.caption)
@@ -1509,7 +1508,7 @@ extension AIEnhancementSettingsView {
                 .padding(.top, 8)
             }
 
-            if !isFluidIntelligence, isEditing {
+            if !isPrivateAIProvider, isEditing {
                 Divider()
                     .background(self.theme.palette.separator.opacity(0.5))
                     .padding(.vertical, 10)
@@ -1517,7 +1516,7 @@ extension AIEnhancementSettingsView {
                 self.editProviderSection
             }
 
-            if !isFluidIntelligence,
+            if !isPrivateAIProvider,
                self.viewModel.showingReasoningConfig,
                self.viewModel.selectedProviderID == item.id
             {
@@ -1591,7 +1590,7 @@ extension AIEnhancementSettingsView {
         let id = item.id.lowercased()
         let name = item.name.lowercased()
 
-        if id.contains("fluid-1") || name.contains("fluid") {
+        if id.contains(PrivateAIProviderFeature.shared.providerID) || name.contains("fluid") {
             return Color(red: 0.1, green: 0.1, blue: 0.12) // Dark/black
         }
         if id.contains("anthropic") || name.contains("anthropic") {
@@ -1638,7 +1637,7 @@ extension AIEnhancementSettingsView {
         let id = item.id.lowercased()
         let name = item.name.lowercased()
 
-        if id.contains("fluid-1") || name.contains("fluid") {
+        if id.contains(PrivateAIProviderFeature.shared.providerID) || name.contains("fluid") {
             return "Provider_Fluid1"
         }
         if id.contains("openai") || name.contains("openai") {

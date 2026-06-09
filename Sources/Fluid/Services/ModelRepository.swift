@@ -7,7 +7,6 @@
 //  instead of maintaining their own hardcoded lists.
 //
 
-import FluidIntelligence
 import Foundation
 
 final class ModelRepository {
@@ -16,16 +15,24 @@ final class ModelRepository {
     private init() {}
 
     /// All built-in provider IDs (not including custom/saved providers)
-    static let builtInProviderIDs = [
-        "fluid-1", "openai", "anthropic", "xai", "groq", "cerebras", "google", "openrouter", "ollama", "lmstudio", "apple-intelligence",
-    ]
+    static var builtInProviderIDs: [String] {
+        var providers = [
+            "openai", "anthropic", "xai", "groq", "cerebras", "google", "openrouter", "ollama", "lmstudio", "apple-intelligence",
+        ]
+        if PrivateFeatures.privateAIProvider {
+            providers.insert(PrivateAIProviderFeature.shared.providerID, at: 0)
+        }
+        return providers
+    }
 
     /// Returns the default models for a given provider ID.
     /// This is used when the user has not added any custom models for that provider.
     func defaultModels(for providerID: String) -> [String] {
+        if PrivateFeatures.privateAIProvider, providerID == PrivateAIProviderFeature.shared.providerID {
+            return PrivateAIProviderFeature.shared.modelIDs()
+        }
+
         switch providerID {
-        case "fluid-1":
-            return FluidModelRegistry.modelIDs()
         case "openai":
             return ["gpt-4.1"]
         case "anthropic":
@@ -79,8 +86,11 @@ final class ModelRepository {
 
     /// Returns the display name for a provider ID
     func displayName(for providerID: String) -> String {
+        if PrivateFeatures.privateAIProvider, providerID == PrivateAIProviderFeature.shared.providerID {
+            return PrivateAIProviderFeature.shared.providerName
+        }
+
         switch providerID {
-        case "fluid-1": return "Fluid Intelligence"
         case "openai": return "OpenAI"
         case "anthropic": return "Anthropic"
         case "xai": return "xAI"
@@ -152,7 +162,6 @@ final class ModelRepository {
         appleIntelligenceDisabledReason: String? = nil
     ) -> [(id: String, name: String)] {
         var list: [(id: String, name: String)] = [
-            ("fluid-1", "Fluid Intelligence"),
             ("openai", "OpenAI"),
             ("anthropic", "Anthropic"),
             ("xai", "xAI"),
@@ -163,6 +172,10 @@ final class ModelRepository {
             ("ollama", "Ollama"),
             ("lmstudio", "LM Studio"),
         ]
+
+        if PrivateFeatures.privateAIProvider {
+            list.insert((PrivateAIProviderFeature.shared.providerID, PrivateAIProviderFeature.shared.providerName), at: 0)
+        }
 
         if includeAppleIntelligence {
             if appleIntelligenceAvailable {
@@ -230,8 +243,8 @@ final class ModelRepository {
     ///   - apiKey: Optional API key for authentication
     /// - Returns: Array of model IDs sorted alphabetically
     func fetchModels(for providerID: String, baseURL: String, apiKey: String?) async throws -> [String] {
-        if providerID == "fluid-1" {
-            return FluidModelRegistry.modelIDs()
+        if PrivateFeatures.privateAIProvider, providerID == PrivateAIProviderFeature.shared.providerID {
+            return PrivateAIProviderFeature.shared.modelIDs()
         }
 
         let isAnthropic = providerID == "anthropic" || baseURL.contains("anthropic.com")

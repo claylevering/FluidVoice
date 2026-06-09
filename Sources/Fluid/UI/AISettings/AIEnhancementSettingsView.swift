@@ -1,6 +1,6 @@
 import SwiftUI
 
-enum FluidIntelligenceModelLoadState: Equatable {
+enum PrivateAIModelLoadState: Equatable {
     case idle
     case downloading(modelID: String)
     case loading(modelID: String)
@@ -44,8 +44,8 @@ struct AIEnhancementSettingsView: View {
     let theme: AppTheme
     @State var expandedProviderID: String? = nil
     @State var providerSearchText: String = ""
-    @State var fluidIntelligenceSelectedModelID: String = FluidIntelligenceIntegrationService.configuredModelID
-    @State var fluidIntelligenceLoadState: FluidIntelligenceModelLoadState = .idle
+    @State var privateAISelectedModelID: String = PrivateAIIntegrationService.configuredModelID
+    @State var privateAILoadState: PrivateAIModelLoadState = .idle
     @State var hoveredPromptCardKey: String? = nil
     @State var selectedPromptMode: SettingsStore.PromptMode = .dictate
     @State var hoveredPromptModeKey: String? = nil
@@ -56,8 +56,8 @@ struct AIEnhancementSettingsView: View {
         self.aiConfigurationCard
             .onAppear {
                 self.viewModel.onAppear()
-                self.fluidIntelligenceSelectedModelID = FluidIntelligenceIntegrationService.configuredModelID
-                self.refreshFluidIntelligenceLoadState()
+                self.privateAISelectedModelID = PrivateAIIntegrationService.configuredModelID
+                self.refreshPrivateAILoadState()
             }
             .onChange(of: self.viewModel.connectionStatus) { oldValue, newValue in
                 if oldValue == .success && newValue != .success {

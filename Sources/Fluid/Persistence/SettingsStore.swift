@@ -105,7 +105,7 @@ final class SettingsStore: ObservableObject {
     }
 
     enum DictationPromptSelection: Equatable {
-        case off, `default`, fluid1
+        case off, `default`, privateAI
         case profile(String)
     }
 
@@ -311,10 +311,10 @@ final class SettingsStore: ObservableObject {
 
     func dictationPromptSelection(for slot: DictationShortcutSlot) -> DictationPromptSelection {
         if self.isDictationPromptOff(for: slot) { return .off }
-        if Fluid1PromptFormat.isAvailable(settings: self) { return .fluid1 }
+        if PrivateAIProviderPromptFormat.isAvailable(settings: self) { return .privateAI }
         if let promptID = self.selectedDictationPromptID(for: slot) {
-            if promptID == Fluid1PromptFormat.promptSelectionID {
-                return Fluid1PromptFormat.isAvailable(settings: self) ? .fluid1 : .default
+            if promptID == PrivateAIProviderPromptFormat.promptSelectionID {
+                return PrivateAIProviderPromptFormat.isAvailable(settings: self) ? .privateAI : .default
             }
             return .profile(promptID)
         }
@@ -326,8 +326,8 @@ final class SettingsStore: ObservableObject {
         switch selection {
         case .off, .default:
             selectedID = nil
-        case .fluid1:
-            selectedID = Fluid1PromptFormat.promptSelectionID
+        case .privateAI:
+            selectedID = PrivateAIProviderPromptFormat.promptSelectionID
         case let .profile(promptID):
             selectedID = promptID
         }
@@ -388,8 +388,8 @@ final class SettingsStore: ObservableObject {
     func selectedPromptID(for mode: PromptMode) -> String? {
         switch mode.normalized {
         case .dictate:
-            if self.selectedDictationPromptID == Fluid1PromptFormat.promptSelectionID,
-               !Fluid1PromptFormat.isAvailable(settings: self) { return nil }
+            if self.selectedDictationPromptID == PrivateAIProviderPromptFormat.promptSelectionID,
+               !PrivateAIProviderPromptFormat.isAvailable(settings: self) { return nil }
             return self.selectedDictationPromptID
         case .edit:
             return self.selectedEditPromptID
@@ -441,7 +441,7 @@ final class SettingsStore: ObservableObject {
 
     func resolvedDictationPromptProfile(for slot: DictationShortcutSlot, appBundleID: String?) -> DictationPromptProfile? {
         switch self.dictationPromptSelection(for: slot) {
-        case .off, .fluid1:
+        case .off, .privateAI:
             return nil
         case let .profile(promptID):
             return self.dictationPromptProfiles.first(where: { $0.id == promptID && $0.mode.normalized == .dictate })
@@ -455,7 +455,7 @@ final class SettingsStore: ObservableObject {
     }
 
     func isAppDictationPromptBindingActive(for slot: DictationShortcutSlot, appBundleID: String?) -> Bool {
-        guard !Fluid1PromptFormat.isAvailable(settings: self) else { return false }
+        guard !PrivateAIProviderPromptFormat.isAvailable(settings: self) else { return false }
         guard self.dictationPromptSelection(for: slot) == .default else { return false }
         return self.hasAppPromptBinding(for: .dictate, appBundleID: appBundleID)
     }
@@ -470,7 +470,7 @@ final class SettingsStore: ObservableObject {
                 return name.isEmpty ? "Untitled" : name
             }
             return "Default"
-        case .fluid1: return "Fluid Intelligence"
+        case .privateAI: return PrivateAIProviderFeature.displayName
         case let .profile(promptID):
             guard let profile = self.dictationPromptProfiles.first(where: { $0.id == promptID && $0.mode.normalized == .dictate }) else {
                 return "Default"
@@ -929,7 +929,7 @@ final class SettingsStore: ObservableObject {
         switch self.dictationPromptSelection(for: slot) {
         case .off:
             return ""
-        case .default, .fluid1:
+        case .default, .privateAI:
             return self.effectivePromptBody(for: .dictate, appBundleID: appBundleID)
         case let .profile(promptID):
             guard let profile = self.dictationPromptProfiles.first(where: { $0.id == promptID && $0.mode.normalized == .dictate }) else {
@@ -950,7 +950,7 @@ final class SettingsStore: ObservableObject {
         }
 
         switch self.dictationPromptSelection(for: slot) {
-        case .off, .default, .fluid1:
+        case .off, .default, .privateAI:
             return self.effectiveSystemPrompt(for: .dictate, appBundleID: appBundleID)
         case let .profile(promptID):
             guard let profile = self.dictationPromptProfiles.first(where: { $0.id == promptID && $0.mode.normalized == .dictate }) else {
@@ -1114,11 +1114,11 @@ final class SettingsStore: ObservableObject {
         }
     }
 
-    var fluid1InterestCaptured: Bool {
-        get { self.defaults.bool(forKey: Keys.fluid1InterestCaptured) }
+    var privateAIInterestCaptured: Bool {
+        get { self.defaults.bool(forKey: Keys.privateAIInterestCaptured) }
         set {
             objectWillChange.send()
-            self.defaults.set(newValue, forKey: Keys.fluid1InterestCaptured)
+            self.defaults.set(newValue, forKey: Keys.privateAIInterestCaptured)
         }
     }
 
@@ -1212,11 +1212,11 @@ final class SettingsStore: ObservableObject {
         }
     }
 
-    var fluidIntelligencePrefixKVCacheEnabled: Bool {
-        get { self.defaults.object(forKey: Keys.fluidIntelligencePrefixKVCacheEnabled) as? Bool ?? true }
+    var privateAIPrefixKVCacheEnabled: Bool {
+        get { self.defaults.object(forKey: PrivateAIProviderFeature.shared.prefixCacheDefaultsKey) as? Bool ?? true }
         set {
             objectWillChange.send()
-            self.defaults.set(newValue, forKey: Keys.fluidIntelligencePrefixKVCacheEnabled)
+            self.defaults.set(newValue, forKey: PrivateAIProviderFeature.shared.prefixCacheDefaultsKey)
         }
     }
 
@@ -2300,7 +2300,7 @@ final class SettingsStore: ObservableObject {
             selectedModelByProvider: self.selectedModelByProvider,
             savedProviders: self.savedProviders,
             modelReasoningConfigs: self.modelReasoningConfigs,
-            fluidIntelligencePrefixKVCacheEnabled: self.fluidIntelligencePrefixKVCacheEnabled,
+            privateAIPrefixKVCacheEnabled: self.privateAIPrefixKVCacheEnabled,
             selectedSpeechModel: self.selectedSpeechModel,
             selectedCohereLanguage: self.selectedCohereLanguage,
             selectedNemotronLanguage: self.selectedNemotronLanguage,
@@ -2379,8 +2379,8 @@ final class SettingsStore: ObservableObject {
         self.selectedProviderID = payload.selectedProviderID
         self.selectedModelByProvider = payload.selectedModelByProvider
         self.modelReasoningConfigs = payload.modelReasoningConfigs
-        if let fluidIntelligencePrefixKVCacheEnabled = payload.fluidIntelligencePrefixKVCacheEnabled {
-            self.fluidIntelligencePrefixKVCacheEnabled = fluidIntelligencePrefixKVCacheEnabled
+        if let privateAIPrefixKVCacheEnabled = payload.privateAIPrefixKVCacheEnabled {
+            self.privateAIPrefixKVCacheEnabled = privateAIPrefixKVCacheEnabled
         }
         self.selectedSpeechModel = payload.selectedSpeechModel
         self.selectedCohereLanguage = payload.selectedCohereLanguage
@@ -3591,13 +3591,13 @@ private extension SettingsStore {
         static let selectedAIModel = "SelectedAIModel"
         static let selectedModelByProvider = "SelectedModelByProvider"
         static let selectedProviderID = "SelectedProviderID"
-        static let fluidIntelligencePrefixKVCacheEnabled = "FluidIntelligencePrefixKVCacheEnabled"
+        static let privateAIPrefixKVCacheEnabled = "PrivateAIProviderPrefixKVCacheEnabled"
         static let providerAPIKeys = "ProviderAPIKeys"
         static let providerAPIKeyIdentifiers = "ProviderAPIKeyIdentifiers"
         static let savedProviders = "SavedProviders"
         static let verifiedProviderFingerprints = "VerifiedProviderFingerprints"
         static let shareAnonymousAnalytics = "ShareAnonymousAnalytics"
-        static let fluid1InterestCaptured = "Fluid1InterestCaptured"
+        static let privateAIInterestCaptured = "PrivateAIProviderInterestCaptured"
         static let hotkeyShortcutKey = "HotkeyShortcutKey"
         static let preferredInputDeviceUID = "PreferredInputDeviceUID"
         static let preferredOutputDeviceUID = "PreferredOutputDeviceUID"

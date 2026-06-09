@@ -18,9 +18,9 @@ final class DictationE2ETests: XCTestCase {
     private let selectedProviderIDKey = "SelectedProviderID"
     private let availableModelsByProviderKey = "AvailableModelsByProvider"
     private let selectedModelByProviderKey = "SelectedModelByProvider"
-    private let fluidIntelligenceSelectedModelIDKey = "FluidIntelligenceSelectedModelID"
-    private let fluidIntelligenceLocalModelPathKey = "FluidIntelligenceLocalModelPath"
-    private let fluidIntelligencePrefixKVCacheEnabledKey = "FluidIntelligencePrefixKVCacheEnabled"
+    private var privateAISelectedModelIDKey: String { PrivateAIProviderFeature.shared.selectedModelDefaultsKey }
+    private var privateAILocalModelPathKey: String { PrivateAIProviderFeature.shared.localModelPathDefaultsKey }
+    private var privateAIPrefixKVCacheEnabledKey: String { PrivateAIProviderFeature.shared.prefixCacheDefaultsKey }
     private let verifiedProviderFingerprintsKey = "VerifiedProviderFingerprints"
 
     func testTranscriptionStartSound_noneOptionHasNoFile() {
@@ -210,7 +210,7 @@ final class DictationE2ETests: XCTestCase {
         }
     }
 
-    func testFluidIntelligenceDictationPromptSelection_allowsOffAndRestoresNonFluidPrompt() {
+    func testPrivateAIProviderDictationPromptSelection_allowsOffAndRestoresNonFluidPrompt() {
         self.withPromptAndProviderSettingsRestored {
             let settings = SettingsStore.shared
             let custom = SettingsStore.DictationPromptProfile(
@@ -221,15 +221,19 @@ final class DictationE2ETests: XCTestCase {
             settings.dictationPromptProfiles = [custom]
             settings.selectedModelByProvider = [
                 "openai": "gpt-4.1",
-                "fluid-1": "fluid-1",
+                PrivateAIProviderFeature.shared.providerID: PrivateAIProviderFeature.shared.providerID,
             ]
             settings.selectedProviderID = "openai"
             settings.setDictationPromptSelection(.profile(custom.id))
 
             XCTAssertEqual(settings.dictationPromptSelection(for: .primary), .profile(custom.id))
 
-            settings.selectedProviderID = "fluid-1"
-            XCTAssertEqual(settings.dictationPromptSelection(for: .primary), .fluid1)
+            settings.selectedProviderID = PrivateAIProviderFeature.shared.providerID
+            if PrivateFeatures.privateAIProvider {
+                XCTAssertEqual(settings.dictationPromptSelection(for: .primary), .privateAI)
+            } else {
+                XCTAssertEqual(settings.dictationPromptSelection(for: .primary), .profile(custom.id))
+            }
 
             settings.setDictationPromptSelection(.off)
             XCTAssertEqual(settings.dictationPromptSelection(for: .primary), .off)
@@ -242,7 +246,7 @@ final class DictationE2ETests: XCTestCase {
         }
     }
 
-    func testFluidIntelligenceDictationPromptSelection_usesOnlyFluidPromptOrOffWhileSelected() {
+    func testPrivateAIProviderDictationPromptSelection_usesOnlyFluidPromptOrOffWhileSelected() {
         self.withPromptAndProviderSettingsRestored {
             let settings = SettingsStore.shared
             let custom = SettingsStore.DictationPromptProfile(
@@ -253,15 +257,21 @@ final class DictationE2ETests: XCTestCase {
             settings.dictationPromptProfiles = [custom]
             settings.selectedModelByProvider = [
                 "openai": "gpt-4.1",
-                "fluid-1": "fluid-1",
+                PrivateAIProviderFeature.shared.providerID: PrivateAIProviderFeature.shared.providerID,
             ]
 
-            settings.selectedProviderID = "fluid-1"
+            settings.selectedProviderID = PrivateAIProviderFeature.shared.providerID
             settings.setDictationPromptSelection(.default)
-            XCTAssertEqual(settings.dictationPromptSelection(for: .primary), .fluid1)
+            XCTAssertEqual(
+                settings.dictationPromptSelection(for: .primary),
+                PrivateFeatures.privateAIProvider ? .privateAI : .default
+            )
 
             settings.setDictationPromptSelection(.profile(custom.id))
-            XCTAssertEqual(settings.dictationPromptSelection(for: .primary), .fluid1)
+            XCTAssertEqual(
+                settings.dictationPromptSelection(for: .primary),
+                PrivateFeatures.privateAIProvider ? .privateAI : .profile(custom.id)
+            )
 
             settings.setDictationPromptSelection(.off)
             XCTAssertEqual(settings.dictationPromptSelection(for: .primary), .off)
@@ -273,39 +283,45 @@ final class DictationE2ETests: XCTestCase {
         }
     }
 
-    func testFluidIntelligencePrefixKVCache_defaultsOnAndPersistsToggle() {
-        self.withRestoredDefaults(keys: [self.fluidIntelligencePrefixKVCacheEnabledKey]) {
+    func testPrivateAIProviderPrefixKVCache_defaultsOnAndPersistsToggle() {
+        self.withRestoredDefaults(keys: [self.privateAIPrefixKVCacheEnabledKey]) {
             let settings = SettingsStore.shared
 
-            XCTAssertTrue(settings.fluidIntelligencePrefixKVCacheEnabled)
+            XCTAssertTrue(settings.privateAIPrefixKVCacheEnabled)
 
-            settings.fluidIntelligencePrefixKVCacheEnabled = false
-            XCTAssertFalse(settings.fluidIntelligencePrefixKVCacheEnabled)
+            settings.privateAIPrefixKVCacheEnabled = false
+            XCTAssertFalse(settings.privateAIPrefixKVCacheEnabled)
 
-            settings.fluidIntelligencePrefixKVCacheEnabled = true
-            XCTAssertTrue(settings.fluidIntelligencePrefixKVCacheEnabled)
+            settings.privateAIPrefixKVCacheEnabled = true
+            XCTAssertTrue(settings.privateAIPrefixKVCacheEnabled)
         }
     }
 
-    func testFluidIntelligenceLocalRuntimeOnlyHandlesFluidModels() {
-        self.withRestoredDefaults(keys: [self.fluidIntelligenceLocalModelPathKey]) {
+    func testPrivateAIProviderLocalRuntimeOnlyHandlesPrivateModels() {
+        self.withRestoredDefaults(keys: [self.privateAILocalModelPathKey]) {
             let tempURL = FileManager.default.temporaryDirectory
-                .appendingPathComponent("FluidVoice-FI-\(UUID().uuidString).gguf")
+                .appendingPathComponent("FluidVoice-PrivateAI-\(UUID().uuidString).gguf")
             XCTAssertTrue(FileManager.default.createFile(atPath: tempURL.path, contents: Data(), attributes: nil))
             defer { try? FileManager.default.removeItem(at: tempURL) }
 
-            UserDefaults.standard.set(tempURL.path, forKey: self.fluidIntelligenceLocalModelPathKey)
+            UserDefaults.standard.set(tempURL.path, forKey: self.privateAILocalModelPathKey)
 
-            XCTAssertTrue(FluidIntelligenceIntegrationService.isLocalRuntimeConfigured)
-            XCTAssertFalse(FluidIntelligenceIntegrationService.shouldHandleDictation(model: "gpt-4.1"))
-            XCTAssertTrue(FluidIntelligenceIntegrationService.shouldHandleDictation(model: "fluid-1"))
+            XCTAssertEqual(
+                PrivateAIIntegrationService.isLocalRuntimeConfigured,
+                PrivateFeatures.privateAIProvider
+            )
+            XCTAssertFalse(PrivateAIIntegrationService.shouldHandleDictation(model: "gpt-4.1"))
+            XCTAssertEqual(
+                PrivateAIIntegrationService.shouldHandleDictation(model: PrivateAIProviderFeature.shared.providerID),
+                PrivateFeatures.privateAIProvider
+            )
         }
     }
 
-    func testFluidIntelligenceLocalRuntimeDoesNotConfigureNonFluidProvider() {
+    func testPrivateAIProviderLocalRuntimeDoesNotConfigureNonFluidProvider() {
         self.withRestoredDefaults(
             keys: [
-                self.fluidIntelligenceLocalModelPathKey,
+                self.privateAILocalModelPathKey,
                 self.selectedProviderIDKey,
                 self.selectedModelByProviderKey,
                 self.verifiedProviderFingerprintsKey,
@@ -315,17 +331,20 @@ final class DictationE2ETests: XCTestCase {
         ) {
             let settings = SettingsStore.shared
             let tempURL = FileManager.default.temporaryDirectory
-                .appendingPathComponent("FluidVoice-FI-\(UUID().uuidString).gguf")
+                .appendingPathComponent("FluidVoice-PrivateAI-\(UUID().uuidString).gguf")
             XCTAssertTrue(FileManager.default.createFile(atPath: tempURL.path, contents: Data(), attributes: nil))
             defer { try? FileManager.default.removeItem(at: tempURL) }
 
-            UserDefaults.standard.set(tempURL.path, forKey: self.fluidIntelligenceLocalModelPathKey)
+            UserDefaults.standard.set(tempURL.path, forKey: self.privateAILocalModelPathKey)
             settings.selectedProviderID = "openai"
             settings.selectedModelByProvider = ["openai": "gpt-4.1"]
             settings.verifiedProviderFingerprints = [:]
             settings.setDictationPromptSelection(.default)
 
-            XCTAssertTrue(FluidIntelligenceIntegrationService.isLocalRuntimeConfigured)
+            XCTAssertEqual(
+                PrivateAIIntegrationService.isLocalRuntimeConfigured,
+                PrivateFeatures.privateAIProvider
+            )
             XCTAssertFalse(DictationAIPostProcessingGate.isConfigured(for: .primary, appBundleID: nil))
         }
     }
@@ -473,7 +492,7 @@ final class DictationE2ETests: XCTestCase {
                 self.selectedProviderIDKey,
                 self.availableModelsByProviderKey,
                 self.selectedModelByProviderKey,
-                self.fluidIntelligenceSelectedModelIDKey,
+                self.privateAISelectedModelIDKey,
             ],
             run: run
         )

@@ -76,8 +76,11 @@ actor PrivateAIIntegrationService {
         self.provider.isModelInstalled(model)
     }
 
-    nonisolated static func prepareModel(_ model: PrivateAIRegisteredModel) async throws -> URL {
-        try await self.provider.prepareModel(model)
+    nonisolated static func prepareModel(
+        _ model: PrivateAIRegisteredModel,
+        progressHandler: PrivateAIModelDownloadProgressHandler? = nil
+    ) async throws -> URL {
+        try await self.provider.prepareModel(model, progressHandler: progressHandler)
     }
 
     nonisolated static var isLocalRuntimeConfigured: Bool {
@@ -140,7 +143,10 @@ private struct UnavailableAIIntegrationShim: PrivateAIIntegrationProviding {
     func localModelPath(for _: PrivateAIRegisteredModel) -> String? { nil }
     func isModelInstalled(_: PrivateAIRegisteredModel) -> Bool { false }
 
-    func prepareModel(_: PrivateAIRegisteredModel) async throws -> URL {
+    func prepareModel(
+        _: PrivateAIRegisteredModel,
+        progressHandler _: PrivateAIModelDownloadProgressHandler?
+    ) async throws -> URL {
         throw PrivateAIUnavailableError()
     }
 

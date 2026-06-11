@@ -9,6 +9,19 @@ struct PrivateAIModelArtifact: Sendable, Codable, Hashable {
     var version: String?
 }
 
+struct PrivateAIModelDownloadProgress: Sendable, Equatable {
+    var bytesWritten: Int64
+    var totalBytesWritten: Int64
+    var totalBytesExpected: Int64?
+
+    var fractionCompleted: Double? {
+        guard let totalBytesExpected, totalBytesExpected > 0 else { return nil }
+        return min(1, max(0, Double(self.totalBytesWritten) / Double(totalBytesExpected)))
+    }
+}
+
+typealias PrivateAIModelDownloadProgressHandler = @Sendable (PrivateAIModelDownloadProgress) async -> Void
+
 struct PrivateAIRegisteredModel: Sendable, Codable, Hashable, Identifiable {
     var id: String { self.artifact.identifier }
     var displayName: String
@@ -90,7 +103,10 @@ protocol PrivateAIIntegrationProviding: Sendable {
     func expectedLocalModelURL(for model: PrivateAIRegisteredModel) -> URL
     func localModelPath(for model: PrivateAIRegisteredModel) -> String?
     func isModelInstalled(_ model: PrivateAIRegisteredModel) -> Bool
-    func prepareModel(_ model: PrivateAIRegisteredModel) async throws -> URL
+    func prepareModel(
+        _ model: PrivateAIRegisteredModel,
+        progressHandler: PrivateAIModelDownloadProgressHandler?
+    ) async throws -> URL
     func shouldHandleDictation(model: String) -> Bool
     func status(for runtime: PrivateAIIntegrationService.RuntimeConfiguration) async -> PrivateAIStatus
     func loadedModelState() async -> PrivateAIIntegrationService.LoadedModelState?
@@ -101,6 +117,12 @@ protocol PrivateAIIntegrationProviding: Sendable {
         runtime: PrivateAIIntegrationService.RuntimeConfiguration,
         context: PrivateAIIntegrationService.AppContext
     ) async throws -> PrivateAIIntegrationService.EnhancementResult
+}
+
+extension PrivateAIIntegrationProviding {
+    func prepareModel(_ model: PrivateAIRegisteredModel) async throws -> URL {
+        try await self.prepareModel(model, progressHandler: nil)
+    }
 }
 
 enum PrivateAIProviderRegistry {
@@ -227,7 +249,10 @@ private struct UnavailablePrivateAIIntegrationProvider: PrivateAIIntegrationProv
     func localModelPath(for _: PrivateAIRegisteredModel) -> String? { nil }
     func isModelInstalled(_: PrivateAIRegisteredModel) -> Bool { false }
 
-    func prepareModel(_: PrivateAIRegisteredModel) async throws -> URL {
+    func prepareModel(
+        _: PrivateAIRegisteredModel,
+        progressHandler _: PrivateAIModelDownloadProgressHandler?
+    ) async throws -> URL {
         throw PrivateAIUnavailableError()
     }
 

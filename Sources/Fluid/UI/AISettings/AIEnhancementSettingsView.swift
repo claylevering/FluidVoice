@@ -2,7 +2,7 @@ import SwiftUI
 
 enum PrivateAIModelLoadState: Equatable {
     case idle
-    case downloading(modelID: String)
+    case downloading(modelID: String, progress: Double?)
     case loading(modelID: String)
     case loaded(modelID: String, latencyMilliseconds: Int?)
     case failed(modelID: String, message: String)
@@ -13,7 +13,7 @@ enum PrivateAIModelLoadState: Equatable {
     }
 
     func isDownloading(_ modelID: String) -> Bool {
-        if case .downloading(modelID) = self { return true }
+        if case .downloading(modelID, _) = self { return true }
         return false
     }
 
@@ -32,6 +32,13 @@ enum PrivateAIModelLoadState: Equatable {
     func failureMessage(for modelID: String) -> String? {
         if case let .failed(failedModelID, message) = self, failedModelID == modelID {
             return message
+        }
+        return nil
+    }
+
+    func downloadProgress(for modelID: String) -> Double? {
+        if case let .downloading(downloadingModelID, progress) = self, downloadingModelID == modelID {
+            return progress
         }
         return nil
     }

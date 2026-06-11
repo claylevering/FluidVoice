@@ -33,7 +33,11 @@ final class DictationPostProcessingService {
             source: "DictationPostProcessingService"
         )
 
-        if PrivateAIIntegrationService.shouldHandleDictation(model: resolved.model) {
+        let isPrivateAIProvider = resolved.providerID == PrivateAIProviderFeature.shared.providerID ||
+            resolved.providerKey == PrivateAIProviderFeature.shared.providerID ||
+            resolved.providerKey == "custom:\(PrivateAIProviderFeature.shared.providerID)"
+
+        if isPrivateAIProvider || PrivateAIIntegrationService.shouldHandleDictation(model: resolved.model) {
             let response = try await PrivateAIIntegrationService.shared.enhanceDictation(
                 trimmed,
                 runtime: PrivateAIIntegrationService.RuntimeConfiguration(

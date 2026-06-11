@@ -1574,9 +1574,12 @@ struct ContentView: View {
 
         let appInfo = self.recordingAppInfo ?? self.getCurrentAppInfo()
         let isDictationCall = overrideSystemPrompt != nil || dictationSlot != nil
+        let isPrivateAIProvider = currentSelectedProviderID == PrivateAIProviderFeature.shared.providerID ||
+            derivedCurrentProvider == PrivateAIProviderFeature.shared.providerID ||
+            derivedCurrentProvider == "custom:\(PrivateAIProviderFeature.shared.providerID)"
         let usePrivateAIProvider = overrideSystemPrompt == nil &&
             isDictationCall &&
-            PrivateAIIntegrationService.shouldHandleDictation(model: derivedSelectedModel)
+            (isPrivateAIProvider || PrivateAIIntegrationService.shouldHandleDictation(model: derivedSelectedModel))
 
         if usePrivateAIProvider {
             if self.shouldTracePromptProcessing {

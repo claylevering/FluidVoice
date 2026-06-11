@@ -541,6 +541,7 @@ extension AIEnhancementSettingsView {
         let status = self.privateAIModelStatus(for: model)
         let isInstalled = PrivateAIIntegrationService.isModelInstalled(model)
         let isDownloading = self.privateAILoadState.isDownloading(model.id)
+        let downloadProgress = self.privateAILoadState.downloadProgress(for: model.id)
         let isLoading = self.privateAILoadState.isLoading(model.id)
         let isLoaded = self.privateAILoadState.isLoaded(model.id)
         let hasLoadFailure = self.privateAILoadState.failureMessage(for: model.id) != nil
@@ -621,12 +622,21 @@ extension AIEnhancementSettingsView {
             }
 
             if isDownloading || isLoading || isLoaded || hasLoadFailure || !isInstalled {
-                HStack(spacing: 6) {
-                    Image(systemName: status.detailIcon)
-                        .font(.caption)
-                    Text(status.detail)
-                        .font(.caption)
-                        .lineLimit(2)
+                VStack(alignment: .leading, spacing: 6) {
+                    HStack(spacing: 6) {
+                        Image(systemName: status.detailIcon)
+                            .font(.caption)
+                        Text(status.detail)
+                            .font(.caption)
+                            .lineLimit(2)
+                    }
+
+                    if let downloadProgress {
+                        ProgressView(value: downloadProgress)
+                            .controlSize(.mini)
+                            .frame(maxWidth: 260)
+                            .tint(status.color)
+                    }
                 }
                 .foregroundStyle(status.color)
             }
@@ -679,7 +689,7 @@ extension AIEnhancementSettingsView {
                             Image(systemName: "arrow.down.circle")
                                 .font(.system(size: 12))
                         }
-                        Text(isDownloading ? "Downloading..." : "Download & Verify")
+                        Text(isDownloading ? Self.downloadButtonText(progress: downloadProgress) : "Download & Verify")
                             .font(.system(size: 13, weight: .semibold))
                     }
                 }
@@ -765,10 +775,24 @@ extension AIEnhancementSettingsView {
             return
         }
 
-        self.privateAILoadState = .downloading(modelID: model.id)
+        guard !self.privateAILoadState.isDownloading(model.id) else { return }
+
+        self.privateAILoadState = .downloading(modelID: model.id, progress: nil)
         Task { @MainActor in
             do {
-                _ = try await PrivateAIIntegrationService.prepareModel(model)
+                DebugLogger.shared.info(
+                    "Private provider download button pressed model=\(model.id)",
+                    source: "AISettingsView"
+                )
+                _ = try await PrivateAIIntegrationService.prepareModel(model) { progress in
+                    await MainActor.run {
+                        guard self.privateAISelectedModelID == model.id else { return }
+                        self.privateAILoadState = .downloading(
+                            modelID: model.id,
+                            progress: progress.fractionCompleted
+                        )
+                    }
+                }
                 guard self.privateAISelectedModelID == model.id else { return }
                 self.privateAILoadState = .loading(modelID: model.id)
                 let start = ContinuousClock.now
@@ -821,9 +845,10 @@ extension AIEnhancementSettingsView {
         for model: PrivateAIRegisteredModel
     ) -> PrivateAIProviderModelStatus {
         if self.privateAILoadState.isDownloading(model.id) {
+            let progress = self.privateAILoadState.downloadProgress(for: model.id)
             return PrivateAIProviderModelStatus(
                 title: "Downloading model",
-                detail: "Downloading \(model.displayName). This can take a few minutes on first setup.",
+                detail: "Downloading \(model.displayName)\(Self.downloadProgressSuffix(progress)). This can take a few minutes on first setup.",
                 icon: "arrow.down.circle.fill",
                 detailIcon: "arrow.down.circle.fill",
                 color: self.theme.palette.accent
@@ -974,6 +999,16 @@ extension AIEnhancementSettingsView {
             return description
         }
         return String(describing: error)
+    }
+
+    private static func downloadProgressSuffix(_ progress: Double?) -> String {
+        guard let progress else { return "" }
+        return " \(Int(progress * 100))%"
+    }
+
+    private static func downloadButtonText(progress: Double?) -> String {
+        guard let progress else { return "Downloading..." }
+        return "Downloading \(Int(progress * 100))%"
     }
 
     private static func elapsedMilliseconds(since start: ContinuousClock.Instant) -> Int {

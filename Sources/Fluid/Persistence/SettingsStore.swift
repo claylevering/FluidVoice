@@ -3569,6 +3569,15 @@ final class SettingsStore: ObservableObject {
             }
         }
 
+        var supportsFastDictationProcessing: Bool {
+            switch self {
+            case .parakeetTDT, .parakeetTDTv2:
+                return true
+            default:
+                return false
+            }
+        }
+
         /// Whether this model supports real-time streaming/chunk processing.
         /// Large Whisper models are too slow for streaming, so they only do final transcription on stop.
         var supportsStreaming: Bool {
@@ -3982,9 +3991,9 @@ extension SettingsStore {
         var description: String {
             switch self {
             case .standard:
-                return "Tries to insert text without changing the clipboard. Usually a bit slower, and may fail or behave inconsistently in some apps."
+                return "Fastest path. Inserts text without changing the clipboard, with paste fallback if direct insertion is unavailable."
             case .reliablePaste:
-                return "Usually faster and works best across browsers and desktop apps. Uses a temporary clipboard paste, so clipboard history apps may briefly record dictated text."
+                return "Compatibility path. Uses a temporary clipboard paste, so clipboard history apps may briefly record dictated text."
             }
         }
     }
@@ -3994,7 +4003,7 @@ extension SettingsStore {
             guard let raw = self.defaults.string(forKey: Keys.textInsertionMode),
                   let mode = TextInsertionMode(rawValue: raw)
             else {
-                return .reliablePaste
+                return .standard
             }
             return mode
         }

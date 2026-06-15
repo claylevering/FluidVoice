@@ -2941,6 +2941,7 @@ private extension ASRService {
 
     func runFastPreviewStopGraceIfNeeded() async {
         guard SettingsStore.shared.parakeetFinalizationMode == .tokenTimedChunkMerge else { return }
+        guard SettingsStore.shared.selectedSpeechModel.supportsFastDictationProcessing else { return }
         guard SettingsStore.shared.selectedSpeechModel.supportsStreaming else { return }
         guard self.transcriptionProvider is FluidAudioProvider else { return }
 

@@ -43,8 +43,8 @@ struct AppTheme {
         let chromeCaption: Font
 
         static let standard = Typography(
-            displayTitle: .system(size: 32, weight: .bold),
-            statement: .system(size: 16, weight: .regular),
+            displayTitle: .system(size: 42, weight: .semibold),
+            statement: .system(size: 17, weight: .regular),
             title: .system(size: 22, weight: .bold),
             titleIcon: .system(size: 22, weight: .regular),
             sectionTitle: .system(size: 15, weight: .semibold),

@@ -575,6 +575,7 @@ struct WelcomeView: View {
 
 struct OnboardingFlowView: View {
     @EnvironmentObject var appServices: AppServices
+    @Environment(\.accessibilityReduceMotion) private var reduceMotion
     private var asr: ASRService { self.appServices.asr }
     @ObservedObject private var settings = SettingsStore.shared
 
@@ -589,6 +590,10 @@ struct OnboardingFlowView: View {
     let theme: AppTheme
 
     @State private var preferredLanguageChoice: PreferredLanguageChoice = .englishOnly
+    @State private var hasPlayedLandingWelcomeSound = false
+    @State private var landingGlowCenter = UnitPoint(x: 0.5, y: 0.18)
+    @State private var lastLandingGlowLocation = CGPoint(x: -1000, y: -1000)
+    private let landingGlowMovementThreshold: CGFloat = 24
 
     private enum PreferredLanguageChoice: String, CaseIterable, Identifiable {
         case englishOnly
@@ -858,10 +863,14 @@ struct OnboardingFlowView: View {
         }
         .onAppear {
             self.syncPreferredLanguageChoiceWithSelectedModel()
+            self.playLandingWelcomeSoundIfNeeded()
             Task { @MainActor in
                 self.asr.micStatus = AVCaptureDevice.authorizationStatus(for: .audio)
                 await self.asr.checkIfModelsExistAsync()
             }
+        }
+        .onChange(of: self.currentStep) { _, _ in
+            self.playLandingWelcomeSoundIfNeeded()
         }
         .onReceive(NotificationCenter.default.publisher(for: NSApplication.didBecomeActiveNotification)) { _ in
             self.asr.micStatus = AVCaptureDevice.authorizationStatus(for: .audio)
@@ -913,62 +922,78 @@ struct OnboardingFlowView: View {
     }
 
     private var landingStep: some View {
-        ScrollView {
-            let landing = self.theme.metrics.onboardingSurface.landing
-            let tileWidth = (landing.contentWidth - (landing.tileSpacing * 2)) / 3
-            let tileColumns = Array(
-                repeating: GridItem(.fixed(tileWidth), spacing: landing.tileSpacing, alignment: .top),
-                count: 3
-            )
+        GeometryReader { proxy in
+            ScrollView {
+                let landing = self.theme.metrics.onboardingSurface.landing
 
-            VStack(alignment: .leading, spacing: self.theme.metrics.onboardingSurface.landing.sectionSpacing) {
-                FluidOnboardingLandingHero(
-                    eyebrow: "FluidVoice",
-                    title: "Say it once. Use it anywhere.",
-                    statement: "FluidVoice turns your speech into clean, ready-to-use text across your Mac, with local dictation first and optional AI polish when you want it.",
-                    systemImage: "waveform.and.mic"
-                ) {
-                    Button("Get Started") {
-                        self.goNext()
+                VStack(alignment: .center, spacing: self.theme.metrics.onboardingSurface.landing.sectionSpacing) {
+                    FluidOnboardingLandingHero(
+                        eyebrow: "",
+                        title: "Just speak.",
+                        accentTitle: "We'll handle the rest.",
+                        firstDetail: "Accurate. Fast. Private. Free.",
+                        secondDetail: "Built for creators, thinkers, and builders."
+                    ) {
+                        Button("Next") {
+                            self.goNext()
+                        }
+                        .fluidOnboardingGlowButton(controlSize: .large)
+                        .keyboardShortcut(.defaultAction)
                     }
-                    .fluidOnboardingProminentButton(controlSize: .large)
-                    .keyboardShortcut(.defaultAction)
                 }
-
-                LazyVGrid(
-                    columns: tileColumns,
-                    alignment: .leading,
-                    spacing: self.theme.metrics.onboardingSurface.landing.tileSpacing
-                ) {
-                    FluidOnboardingValueTile(
-                        systemImage: "keyboard",
-                        title: "Types where you work",
-                        description: "Dictate into Notes, browsers, chat, docs, and editors."
-                    )
-                    FluidOnboardingValueTile(
-                        systemImage: "lock",
-                        title: "Local-first setup",
-                        description: "Prepare a voice model once and keep core dictation on your Mac."
-                    )
-                    FluidOnboardingValueTile(
-                        systemImage: "wand.and.stars",
-                        title: "Cleaner drafts",
-                        description: "Turn rough speech into polished text when enhancement is enabled."
-                    )
-                }
-
-                FluidOnboardingChecklistPanel(title: "Setup takes a few minutes") {
-                    FluidOnboardingChecklistRow(systemImage: "cpu", text: "Choose and prepare a voice model")
-                    FluidOnboardingChecklistRow(systemImage: "mic", text: "Allow microphone access")
-                    FluidOnboardingChecklistRow(systemImage: "keyboard.badge.eye", text: "Allow FluidVoice to type into apps")
-                    FluidOnboardingChecklistRow(systemImage: "text.bubble", text: "Run one quick test")
+                .frame(width: landing.contentWidth, alignment: .center)
+                .frame(maxWidth: .infinity)
+                .frame(minHeight: proxy.size.height, alignment: .center)
+                .offset(y: -78)
+                .padding(.horizontal, 24)
+                .padding(.vertical, 24)
+            }
+            .defaultScrollAnchor(.center)
+            .contentShape(Rectangle())
+            .onContinuousHover { phase in
+                switch phase {
+                case let .active(location):
+                    self.updateLandingGlow(location: location, in: proxy.size)
+                case .ended:
+                    self.resetLandingGlow()
                 }
             }
-            .frame(width: landing.contentWidth, alignment: .leading)
-            .frame(maxWidth: .infinity)
-            .padding(24)
+            .background {
+                FluidOnboardingLandingBackdrop(glowCenter: self.landingGlowCenter)
+            }
         }
-        .defaultScrollAnchor(.center)
+    }
+
+    private func updateLandingGlow(location: CGPoint, in size: CGSize) {
+        guard !self.reduceMotion else { return }
+        guard location.x.isFinite, location.y.isFinite, size.width > 0, size.height > 0 else { return }
+
+        let dx = location.x - self.lastLandingGlowLocation.x
+        let dy = location.y - self.lastLandingGlowLocation.y
+        guard (dx * dx) + (dy * dy) > (self.landingGlowMovementThreshold * self.landingGlowMovementThreshold) else { return }
+
+        self.lastLandingGlowLocation = location
+        let normalizedX = min(max(location.x / size.width, 0), 1)
+        let normalizedY = min(max(location.y / size.height, 0), 1)
+
+        withAnimation(.easeOut(duration: 0.22)) {
+            self.landingGlowCenter = UnitPoint(x: normalizedX, y: normalizedY)
+        }
+    }
+
+    private func resetLandingGlow() {
+        guard !self.reduceMotion else { return }
+        self.lastLandingGlowLocation = CGPoint(x: -1000, y: -1000)
+
+        withAnimation(.easeOut(duration: 0.35)) {
+            self.landingGlowCenter = UnitPoint(x: 0.5, y: 0.18)
+        }
+    }
+
+    private func playLandingWelcomeSoundIfNeeded() {
+        guard self.step == .landing, !self.hasPlayedLandingWelcomeSound else { return }
+        self.hasPlayedLandingWelcomeSound = true
+        OnboardingSoundPlayer.shared.playWelcomeSound()
     }
 
     private var voiceModelStep: some View {

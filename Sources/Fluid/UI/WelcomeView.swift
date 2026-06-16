@@ -1957,21 +1957,23 @@ struct OnboardingFlowView: View {
         return VStack(alignment: .leading, spacing: 10) {
             HStack(alignment: .top, spacing: 10) {
                 Text(self.onboardingModelTitle(for: model))
-                    .font(.system(size: 24, weight: .semibold))
+                    .font(self.theme.typography.sectionTitle)
                     .foregroundStyle(.white)
-                    .lineLimit(1)
-                    .minimumScaleFactor(0.72)
+                    .lineLimit(2)
+                    .minimumScaleFactor(0.82)
+                    .fixedSize(horizontal: false, vertical: true)
 
                 Spacer(minLength: 8)
 
                 Image(systemName: "info.circle")
-                    .font(.system(size: 17, weight: .semibold))
+                    .font(self.theme.typography.sectionTitle)
                     .foregroundStyle(Color.white.opacity(0.58))
                     .frame(width: 24, height: 24)
                     .contentShape(Circle())
                     .help(self.onboardingModelTooltip(for: route))
                     .accessibilityLabel(self.onboardingModelTooltip(for: route))
             }
+            .frame(height: 38, alignment: .top)
 
             self.onboardingModelMetadataRow(badgeText: route.badgeText)
 
@@ -1984,18 +1986,18 @@ struct OnboardingFlowView: View {
 
             HStack(spacing: 10) {
                 Image(systemName: "internaldrive")
-                    .font(.system(size: 16, weight: .semibold))
+                    .font(self.theme.typography.sectionTitle)
                     .foregroundStyle(Color.white.opacity(0.62))
                     .frame(width: 22)
 
                 Text("Download size")
-                    .font(.system(size: 13, weight: .medium))
+                    .font(self.theme.typography.bodySmallStrong)
                     .foregroundStyle(Color.white.opacity(0.62))
 
                 Spacer()
 
                 Text(model.downloadSize)
-                    .font(.system(size: 14, weight: .semibold))
+                    .font(self.theme.typography.bodySmallStrong)
                     .foregroundStyle(.white)
                     .lineLimit(1)
                     .minimumScaleFactor(0.80)
@@ -2008,7 +2010,7 @@ struct OnboardingFlowView: View {
                             .tint(FluidOnboardingLandingColors.blue)
 
                         Text(progress >= 0.82 ? "Finalizing..." : "Downloading \(Int(progress * 100))%")
-                            .font(.system(size: 11, weight: .semibold))
+                            .font(self.theme.typography.captionStrong)
                             .foregroundStyle(Color.white.opacity(0.56))
                     } else {
                         HStack(spacing: 8) {
@@ -2017,7 +2019,7 @@ struct OnboardingFlowView: View {
                                 .fixedSize()
 
                             Text(isUninstalling ? "Deleting..." : "Loading model...")
-                                .font(.system(size: 12, weight: .semibold))
+                                .font(self.theme.typography.captionStrong)
                                 .foregroundStyle(Color.white.opacity(0.62))
                         }
                     }
@@ -2124,7 +2126,7 @@ struct OnboardingFlowView: View {
         VStack(alignment: .leading, spacing: 6) {
             if let badgeText {
                 Label(badgeText, systemImage: "checkmark.seal.fill")
-                    .font(.system(size: 11, weight: .bold))
+                    .font(self.theme.typography.badge)
                     .foregroundStyle(Color.green.opacity(0.92))
                     .labelStyle(.titleAndIcon)
                     .lineLimit(1)
@@ -2146,11 +2148,11 @@ struct OnboardingFlowView: View {
         return HStack(spacing: 10) {
             HStack(spacing: 5) {
                 Image(systemName: icon)
-                    .font(.system(size: 12, weight: .bold))
+                    .font(self.theme.typography.captionStrong)
                     .foregroundStyle(color)
 
                 Text(label)
-                    .font(.system(size: 12, weight: .bold))
+                    .font(self.theme.typography.captionStrong)
                     .foregroundStyle(Color.white.opacity(0.66))
                     .lineLimit(1)
                     .minimumScaleFactor(0.82)
@@ -2189,7 +2191,7 @@ struct OnboardingFlowView: View {
             .frame(height: 9)
 
             Text("\(Int(fillPercent * 100))%")
-                .font(.system(size: 14, weight: .bold))
+                .font(self.theme.typography.bodySmallStrong)
                 .foregroundStyle(fillPercent > 0 ? color : Color.white.opacity(0.48))
                 .lineLimit(1)
                 .minimumScaleFactor(0.82)

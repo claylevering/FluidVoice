@@ -3340,7 +3340,7 @@ final class SettingsStore: ObservableObject {
             case .nemotronOffline: return "~530 MB"
             case .nemotronStreaming: return "~670 MB"
             case .nemotronStreaming320: return "~670 MB"
-            case .appleSpeech: return "Built-in (Zero Download)"
+            case .appleSpeech: return "Built-in"
             case .appleSpeechAnalyzer: return "Built-in"
             case .whisperTiny: return "~75 MB"
             case .whisperBase: return "~142 MB"

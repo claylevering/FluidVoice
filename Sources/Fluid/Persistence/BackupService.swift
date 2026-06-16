@@ -16,6 +16,7 @@ struct SettingsBackupPayload: Codable, Equatable {
     let selectedSpeechModel: SettingsStore.SpeechModel
     let selectedCohereLanguage: SettingsStore.CohereLanguage
     let selectedNemotronLanguage: SettingsStore.NemotronLanguage?
+    let selectedAppleSpeechLocaleIdentifier: String?
     let hotkeyShortcut: HotkeyShortcut
     let promptModeHotkeyShortcut: HotkeyShortcut
     let promptModeShortcutEnabled: Bool

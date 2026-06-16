@@ -1,4 +1,7 @@
 import Foundation
+#if canImport(Speech)
+import Speech
+#endif
 import SwiftWhisper
 
 struct VoiceEngineLanguage: Identifiable, Equatable {
@@ -15,6 +18,7 @@ struct VoiceEngineLanguage: Identifiable, Equatable {
 struct VoiceEngineLanguageRoute: Identifiable, Equatable {
     enum LanguageBinding: Equatable {
         case automatic
+        case appleSpeech(localeIdentifier: String)
         case cohere(SettingsStore.CohereLanguage)
         case nemotron(SettingsStore.NemotronLanguage)
         case whisper(languageCode: String)
@@ -23,6 +27,8 @@ struct VoiceEngineLanguageRoute: Identifiable, Equatable {
             switch self {
             case .automatic:
                 return "auto"
+            case let .appleSpeech(localeIdentifier):
+                return "apple-\(localeIdentifier)"
             case let .cohere(language):
                 return "cohere-\(language.rawValue)"
             case let .nemotron(language):
@@ -114,6 +120,8 @@ enum VoiceEngineLanguageCatalog {
         switch route.binding {
         case .automatic, .whisper:
             break
+        case let .appleSpeech(localeIdentifier):
+            settings.selectedAppleSpeechLocaleIdentifier = localeIdentifier
         case let .cohere(language):
             settings.selectedCohereLanguage = language
         case let .nemotron(language):
@@ -148,6 +156,14 @@ enum VoiceEngineLanguageCatalog {
             }
         }
 
+        if let appleSpeechAnalyzerLocale = Self.appleSpeechAnalyzerLocaleIdentifier(for: language.id) {
+            routes.append(Self.route(language, .appleSpeechAnalyzer, .appleSpeech(localeIdentifier: appleSpeechAnalyzerLocale)))
+        }
+
+        if let appleSpeechLegacyLocale = Self.appleSpeechLegacyLocaleIdentifier(for: language.id) {
+            routes.append(Self.route(language, .appleSpeech, .appleSpeech(localeIdentifier: appleSpeechLegacyLocale)))
+        }
+
         return routes
     }
 
@@ -169,6 +185,19 @@ enum VoiceEngineLanguageCatalog {
 
     private static func whisperLanguageCode(for languageID: String) -> String? {
         self.whisperLanguageCodeMap[languageID]
+    }
+
+    private static func appleSpeechAnalyzerLocaleIdentifier(for languageID: String) -> String? {
+        self.appleSpeechAnalyzerLocaleMap[languageID]
+    }
+
+    private static func appleSpeechLegacyLocaleIdentifier(for languageID: String) -> String? {
+        guard let preferredLocales = self.appleSpeechLegacyLocalePreferences[languageID] else {
+            return nil
+        }
+
+        let supportedLocales = self.legacyAppleLocaleIDs
+        return preferredLocales.first { supportedLocales.contains($0) }
     }
 
     private static let popularLanguageIDs: Set<String> = [
@@ -258,6 +287,66 @@ enum VoiceEngineLanguageCatalog {
     private static let whisperModelOrder: [SettingsStore.SpeechModel] = [
         .whisperSmall,
     ]
+
+    private static let appleSpeechAnalyzerLocaleMap: [String: String] = [
+        "de": "de-DE",
+        "en": "en-US",
+        "es": "es-US",
+        "fr": "fr-FR",
+        "it": "it-IT",
+        "ja": "ja-JP",
+        "ko": "ko-KR",
+        "pt": "pt-BR",
+        "zh": "zh-CN",
+    ]
+
+    private static let appleSpeechLegacyLocalePreferences: [String: [String]] = [
+        "ar": ["ar-SA"],
+        "ca": ["ca-ES"],
+        "cs": ["cs-CZ"],
+        "da": ["da-DK"],
+        "de": ["de-DE", "de-AT", "de-CH"],
+        "el": ["el-GR"],
+        "en": ["en-US", "en-GB", "en-CA", "en-AU", "en-IN"],
+        "es": ["es-US", "es-ES", "es-MX", "es-419"],
+        "fi": ["fi-FI"],
+        "fr": ["fr-FR", "fr-CA", "fr-BE", "fr-CH"],
+        "he": ["he-IL"],
+        "hi": ["hi-IN"],
+        "hr": ["hr-HR"],
+        "hu": ["hu-HU"],
+        "id": ["id-ID"],
+        "it": ["it-IT", "it-CH"],
+        "ja": ["ja-JP"],
+        "ko": ["ko-KR"],
+        "ms": ["ms-MY"],
+        "nl": ["nl-NL", "nl-BE"],
+        "no": ["nb-NO"],
+        "pl": ["pl-PL"],
+        "pt": ["pt-BR", "pt-PT"],
+        "ro": ["ro-RO"],
+        "ru": ["ru-RU"],
+        "sk": ["sk-SK"],
+        "sv": ["sv-SE"],
+        "th": ["th-TH"],
+        "tr": ["tr-TR"],
+        "uk": ["uk-UA"],
+        "vi": ["vi-VN"],
+        "zh": ["zh-CN", "zh-TW", "zh-HK"],
+    ]
+
+    private static let legacyAppleLocaleIDs: Set<String> = {
+        #if canImport(Speech)
+        if #available(macOS 10.15, *) {
+            return Set(SFSpeechRecognizer.supportedLocales().map { Self.normalizedLocaleIdentifier($0.identifier) })
+        }
+        #endif
+        return []
+    }()
+
+    private static func normalizedLocaleIdentifier(_ identifier: String) -> String {
+        identifier.replacingOccurrences(of: "_", with: "-")
+    }
 
     private static let whisperLanguageCodeMap: [String: String] = {
         let supportedCodes = Set(

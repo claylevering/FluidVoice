@@ -731,11 +731,37 @@ struct OnboardingFlowView: View {
         self.selectedLanguageRoutes.first
     }
 
-    private var otherModelRoutes: [VoiceEngineLanguageRoute] {
-        guard let primaryDisplayedModelRoute else {
-            return []
+    private var defaultDisplayedModelRoutes: [VoiceEngineLanguageRoute] {
+        var routes: [VoiceEngineLanguageRoute] = []
+        if let primaryDisplayedModelRoute {
+            routes.append(primaryDisplayedModelRoute)
         }
-        return self.selectedLanguageRoutes.filter { $0.id != primaryDisplayedModelRoute.id }
+        if let builtInRoute = self.defaultBuiltInModelRoute,
+           !routes.contains(where: { $0.id == builtInRoute.id })
+        {
+            routes.append(builtInRoute)
+        }
+        return routes
+    }
+
+    private var defaultBuiltInModelRoute: VoiceEngineLanguageRoute? {
+        guard self.selectedOnboardingLanguage.id == "en" else {
+            return nil
+        }
+
+        return self.selectedLanguageRoutes.first { route in
+            switch route.model {
+            case .appleSpeech, .appleSpeechAnalyzer:
+                return true
+            default:
+                return false
+            }
+        }
+    }
+
+    private var otherModelRoutes: [VoiceEngineLanguageRoute] {
+        let defaultRouteIDs = Set(self.defaultDisplayedModelRoutes.map(\.id))
+        return self.selectedLanguageRoutes.filter { !defaultRouteIDs.contains($0.id) }
     }
 
     private var recommendedOnboardingModel: SettingsStore.SpeechModel {
@@ -1448,7 +1474,7 @@ struct OnboardingFlowView: View {
             let availableRouteHeight = max(CGFloat(306), proxy.size.height - 410)
             let routeGridHeight = self.isShowingOtherModelRoutes
                 ? min(CGFloat(500), max(CGFloat(330), availableRouteHeight))
-                : min(CGFloat(324), availableRouteHeight)
+                : min(CGFloat(340), availableRouteHeight)
 
             ZStack {
                 FluidOnboardingLandingBackdrop(glowCenter: self.landingGlowCenter)
@@ -1492,8 +1518,15 @@ struct OnboardingFlowView: View {
 
                         ScrollView(.vertical, showsIndicators: self.isShowingOtherModelRoutes) {
                             VStack(spacing: 10) {
-                                if let primaryDisplayedModelRoute {
-                                    self.onboardingRouteCard(for: primaryDisplayedModelRoute)
+                                let defaultRoutes = self.defaultDisplayedModelRoutes
+                                if defaultRoutes.count == 1, let route = defaultRoutes.first {
+                                    self.onboardingRouteCard(for: route)
+                                } else if !defaultRoutes.isEmpty {
+                                    HStack(spacing: 16) {
+                                        ForEach(defaultRoutes) { route in
+                                            self.onboardingRouteCard(for: route)
+                                        }
+                                    }
                                 }
 
                                 if !self.otherModelRoutes.isEmpty {
@@ -1836,7 +1869,11 @@ struct OnboardingFlowView: View {
     }
 
     private func isOnboardingModelDownloaded(_ model: SettingsStore.SpeechModel) -> Bool {
-        model.isInstalled || (self.isOnboardingModelSelected(model) && (self.asr.isAsrReady || self.asr.modelsExistOnDisk))
+        self.isOnboardingModelBundledOrInstalled(model) || (self.isOnboardingModelSelected(model) && (self.asr.isAsrReady || self.asr.modelsExistOnDisk))
+    }
+
+    private func isOnboardingModelBundledOrInstalled(_ model: SettingsStore.SpeechModel) -> Bool {
+        model == .appleSpeech || (model != .appleSpeechAnalyzer && model.isInstalled)
     }
 
     private func isPreparingOnboardingModel(_ model: SettingsStore.SpeechModel) -> Bool {
@@ -1906,11 +1943,12 @@ struct OnboardingFlowView: View {
         let isSelected = self.isOnboardingRouteSelected(route)
         let isHovered = enablesHover && self.hoveredModelRouteID == route.id
         let isRouteActiveInSettings = self.isRouteSelectedInSettings(route)
-        let isDownloaded = model.isInstalled || (isRouteActiveInSettings && (self.asr.isAsrReady || self.asr.modelsExistOnDisk))
+        let isDownloaded = self.isOnboardingModelBundledOrInstalled(model) || (isRouteActiveInSettings && (self.asr.isAsrReady || self.asr.modelsExistOnDisk))
         let isPreparing = self.preparingModelRouteID == route.id || (isRouteActiveInSettings && (self.asr.isDownloadingModel || (self.asr.isLoadingModel && !self.asr.isAsrReady)))
         let isReady = self.isOnboardingRouteReady(route)
         let isUninstalling = self.uninstallingModelRouteID == route.id
         let areModelActionsBlocked = self.asr.isRunning || self.uninstallingModelRouteID != nil || self.preparingModelRouteID != nil || isPreparing || self.isModelPreparationInProgress
+        let isBuiltInAppleModel = model == .appleSpeech || model == .appleSpeechAnalyzer
         let shape = RoundedRectangle(cornerRadius: 14, style: .continuous)
         let cardFill = isHovered
             ? Color(red: 0.042, green: 0.052, blue: 0.074)
@@ -1985,6 +2023,17 @@ struct OnboardingFlowView: View {
                     }
                 }
                 .frame(height: 42, alignment: .center)
+            } else if isDownloaded, isBuiltInAppleModel {
+                self.onboardingModelActionButton(
+                    id: "\(route.id)-activate",
+                    title: self.onboardingModelActionButtonTitle(isPreparing: false, isDownloaded: true, isReady: isReady),
+                    systemImage: isReady ? "checkmark" : "bolt.fill",
+                    tone: .primary,
+                    width: nil,
+                    isDisabled: areModelActionsBlocked || isReady
+                ) {
+                    self.prepareOnboardingRoute(route)
+                }
             } else if isDownloaded {
                 HStack(spacing: 8) {
                     self.onboardingModelActionButton(
@@ -2393,6 +2442,8 @@ struct OnboardingFlowView: View {
         switch route.binding {
         case .automatic, .whisper:
             return self.settings.onboardingSelectedLanguageID == route.language.id
+        case let .appleSpeech(localeIdentifier):
+            return self.settings.selectedAppleSpeechLocaleIdentifier == localeIdentifier
         case let .cohere(language):
             return self.settings.selectedCohereLanguage == language
         case let .nemotron(language):
@@ -2408,6 +2459,8 @@ struct OnboardingFlowView: View {
         switch route.binding {
         case .automatic, .whisper:
             return true
+        case let .appleSpeech(localeIdentifier):
+            return self.settings.selectedAppleSpeechLocaleIdentifier == localeIdentifier
         case let .cohere(language):
             return self.settings.selectedCohereLanguage == language
         case let .nemotron(language):
@@ -2417,6 +2470,7 @@ struct OnboardingFlowView: View {
 
     private func selectOnboardingRoute(_ route: VoiceEngineLanguageRoute) {
         let oldModel = self.settings.selectedSpeechModel
+        let oldAppleSpeechLocaleIdentifier = self.settings.selectedAppleSpeechLocaleIdentifier
         let oldCohereLanguage = self.settings.selectedCohereLanguage
         let oldNemotronLanguage = self.settings.selectedNemotronLanguage
 
@@ -2427,6 +2481,8 @@ struct OnboardingFlowView: View {
         switch route.binding {
         case .automatic, .whisper:
             languageChanged = false
+        case .appleSpeech:
+            languageChanged = oldAppleSpeechLocaleIdentifier != self.settings.selectedAppleSpeechLocaleIdentifier
         case .cohere:
             languageChanged = oldCohereLanguage != self.settings.selectedCohereLanguage
         case .nemotron:

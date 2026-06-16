@@ -1994,6 +1994,28 @@ final class SettingsStore: ObservableObject {
         }
     }
 
+    var selectedAppleSpeechLocaleIdentifier: String {
+        get {
+            let stored = self.defaults.string(forKey: Keys.selectedAppleSpeechLocaleIdentifier)?
+                .trimmingCharacters(in: .whitespacesAndNewlines)
+            if let stored, !stored.isEmpty {
+                return stored
+            }
+            return Locale.current.identifier.replacingOccurrences(of: "_", with: "-")
+        }
+        set {
+            objectWillChange.send()
+            let normalized = newValue
+                .trimmingCharacters(in: .whitespacesAndNewlines)
+                .replacingOccurrences(of: "_", with: "-")
+            self.defaults.set(normalized.isEmpty ? "en-US" : normalized, forKey: Keys.selectedAppleSpeechLocaleIdentifier)
+        }
+    }
+
+    var selectedAppleSpeechLocale: Locale {
+        Locale(identifier: self.selectedAppleSpeechLocaleIdentifier)
+    }
+
     var shouldShowOnboarding: Bool {
         !self.onboardingCompleted
     }
@@ -2478,6 +2500,7 @@ final class SettingsStore: ObservableObject {
             selectedSpeechModel: self.selectedSpeechModel,
             selectedCohereLanguage: self.selectedCohereLanguage,
             selectedNemotronLanguage: self.selectedNemotronLanguage,
+            selectedAppleSpeechLocaleIdentifier: self.selectedAppleSpeechLocaleIdentifier,
             hotkeyShortcut: self.hotkeyShortcut,
             promptModeHotkeyShortcut: self.promptModeHotkeyShortcut,
             promptModeShortcutEnabled: self.promptModeShortcutEnabled,
@@ -2562,6 +2585,9 @@ final class SettingsStore: ObservableObject {
         self.selectedCohereLanguage = payload.selectedCohereLanguage
         if let selectedNemotronLanguage = payload.selectedNemotronLanguage {
             self.selectedNemotronLanguage = selectedNemotronLanguage
+        }
+        if let selectedAppleSpeechLocaleIdentifier = payload.selectedAppleSpeechLocaleIdentifier {
+            self.selectedAppleSpeechLocaleIdentifier = selectedAppleSpeechLocaleIdentifier
         }
         self.hotkeyShortcut = payload.hotkeyShortcut
         self.promptModeHotkeyShortcut = payload.promptModeHotkeyShortcut
@@ -3467,7 +3493,7 @@ final class SettingsStore: ObservableObject {
             case .nemotronStreaming320:
                 return "NVIDIA Nemotron 3.5 streaming-capable transcription. Supports 40 language-locales with auto or manual language selection."
             case .appleSpeech:
-                return "Built-in macOS speech recognition. No download required."
+                return "Built-in macOS speech recognition. No model download required."
             case .appleSpeechAnalyzer:
                 return "Advanced and modern on-device recognition for newer macOS devices."
             case .whisperTiny:
@@ -4001,6 +4027,7 @@ private extension SettingsStore {
         static let selectedSpeechModel = "SelectedSpeechModel"
         static let selectedCohereLanguage = "SelectedCohereLanguage"
         static let selectedNemotronLanguage = "SelectedNemotronLanguage"
+        static let selectedAppleSpeechLocaleIdentifier = "SelectedAppleSpeechLocaleIdentifier"
         static let externalCoreMLArtifactsDirectories = "ExternalCoreMLArtifactsDirectories"
 
         // Overlay Position

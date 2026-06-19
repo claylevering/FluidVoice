@@ -2067,7 +2067,11 @@ final class SettingsStore: ObservableObject {
     private func hasLegacyUsageSignals() -> Bool {
         if self.defaults.object(forKey: Keys.playgroundUsed) != nil { return true }
         if self.defaults.object(forKey: Keys.hotkeyShortcutKey) != nil { return true }
-        if self.defaults.object(forKey: Keys.selectedSpeechModel) != nil { return true }
+        if let rawSpeechModel = self.defaults.string(forKey: Keys.selectedSpeechModel),
+           rawSpeechModel != SpeechModel.defaultModel.rawValue
+        {
+            return true
+        }
         if self.defaults.object(forKey: Keys.selectedProviderID) != nil { return true }
         if self.defaults.object(forKey: Keys.customDictionaryEntries) != nil { return true }
         if !self.savedProviders.isEmpty { return true }

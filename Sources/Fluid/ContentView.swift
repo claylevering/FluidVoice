@@ -2619,6 +2619,9 @@ struct ContentView: View {
 
         Task {
             await self.asr.start()
+            if !self.asr.isRunning {
+                self.menuBarManager.hideRecordingOverlayImmediately(reason: "asr_start_failed")
+            }
         }
 
         // Pre-load model in background while recording (avoids 10s freeze on stop)
@@ -3211,6 +3214,9 @@ extension ContentView {
             let asrStartStartedAt = ProcessInfo.processInfo.systemUptime
             DebugLogger.shared.benchmark("APP_BENCH", message: "asr_start_call", source: "AppBenchmark")
             await self.asr.start()
+            if !self.asr.isRunning {
+                self.menuBarManager.hideRecordingOverlayImmediately(reason: "asr_start_failed")
+            }
             DebugLogger.shared.benchmark(
                 "APP_BENCH",
                 message: "asr_start_return elapsedMs=\(Int(((ProcessInfo.processInfo.systemUptime - asrStartStartedAt) * 1000).rounded()))",

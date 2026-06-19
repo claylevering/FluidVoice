@@ -2971,7 +2971,13 @@ final class SettingsStore: ObservableObject {
         if PrivateFeatures.privateAIProvider {
             providerIDs.append(PrivateAIProviderFeature.shared.providerID)
         }
-        return providerIDs.filter { self.isVerifiedProviderForCurrentConfiguration($0) }
+
+        var seenProviderKeys = Set<String>()
+        return providerIDs.filter { providerID in
+            let key = self.canonicalProviderKey(for: providerID)
+            guard !key.isEmpty, seenProviderKeys.insert(key).inserted else { return false }
+            return self.isVerifiedProviderForCurrentConfiguration(providerID)
+        }
     }
 
     private func isVerifiedProviderForCurrentConfiguration(_ providerID: String) -> Bool {

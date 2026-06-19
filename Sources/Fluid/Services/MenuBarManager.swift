@@ -254,6 +254,37 @@ final class MenuBarManager: NSObject, ObservableObject, NSMenuDelegate {
         self.overlayBench("show_workitem_return mode=\(self.currentOverlayMode.rawValue)")
     }
 
+    func hideRecordingOverlayImmediately(reason: String) {
+        self.pendingShowOperation?.cancel()
+        self.pendingShowOperation = nil
+        self.pendingHideOperation?.cancel()
+        self.pendingHideOperation = nil
+
+        guard !self.isProcessingActive else {
+            self.overlayBench("instant_hide_return reason=\(reason) processing_active")
+            return
+        }
+
+        guard self.overlayVisible else {
+            self.overlayBench("instant_hide_return reason=\(reason) already_hidden")
+            return
+        }
+
+        self.overlayVisible = false
+        self.overlayBench("instant_hide_request reason=\(reason)")
+
+        if NotchOverlayManager.shared.isCommandOutputExpanded {
+            NotchContentState.shared.setRecordingInExpandedMode(false)
+            self.expandedModeAudioSubscription?.cancel()
+            self.expandedModeAudioSubscription = nil
+            self.overlayBench("instant_hide_return reason=expanded_command_output")
+            return
+        }
+
+        NotchOverlayManager.shared.hide()
+        self.overlayBench("instant_hide_return")
+    }
+
     // MARK: - Public API for overlay management
 
     func updateOverlayTranscription(_ text: String) {

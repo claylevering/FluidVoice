@@ -13,14 +13,15 @@ enum DictationAIPostProcessingGate {
     static func isConfigured(for slot: SettingsStore.DictationShortcutSlot, appBundleID: String? = nil) -> Bool {
         let settings = SettingsStore.shared
         guard settings.dictationPromptSelection(for: slot) != .off else { return false }
-        if PrivateAIProviderPromptFormat.isAvailable(settings: settings) {
-            return self.isPrivateProviderConfigured(settings: settings)
-        }
         if let appBundleID,
            settings.promptRoutingScope(for: .dictate) == .selectedAppsOnly,
            !settings.hasAppPromptBinding(for: .dictate, appBundleID: appBundleID)
         {
             return false
+        }
+
+        if PrivateAIProviderPromptFormat.isAvailable(settings: settings) {
+            return self.isPrivateProviderConfigured(settings: settings)
         }
 
         return self.isProviderConfigured()

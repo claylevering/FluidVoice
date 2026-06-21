@@ -6,6 +6,7 @@ private nonisolated enum HotkeyHoldModeType: Hashable {
     case promptMode
     case commandMode
     case rewriteMode
+    case promptAssignment
 }
 
 private final nonisolated class HotkeyState: @unchecked Sendable {
@@ -14,6 +15,7 @@ private final nonisolated class HotkeyState: @unchecked Sendable {
     var isPromptModeKeyPressed = false
     var isCommandModeKeyPressed = false
     var isRewriteKeyPressed = false
+    var isPromptAssignmentKeyPressed = false
     var pressedModifierKeyCodes: Set<UInt16> = []
     var modifierOnlyKeyDown = false
     var otherKeyPressedDuringModifier = false
@@ -103,6 +105,11 @@ final class GlobalHotkeyManager: NSObject {
     private nonisolated var isRewriteKeyPressed: Bool {
         get { self.state.withLock { self.state.isRewriteKeyPressed } }
         set { self.state.withLock { self.state.isRewriteKeyPressed = newValue } }
+    }
+
+    private nonisolated var isPromptAssignmentKeyPressed: Bool {
+        get { self.state.withLock { self.state.isPromptAssignmentKeyPressed } }
+        set { self.state.withLock { self.state.isPromptAssignmentKeyPressed = newValue } }
     }
 
     private nonisolated var pressedModifierKeyCodes: Set<UInt16> {
@@ -486,6 +493,7 @@ final class GlobalHotkeyManager: NSObject {
         self.runLoopSource = nil
     }
 
+    // swiftlint:disable cyclomatic_complexity function_body_length
     private func handleKeyEvent(proxy: CGEventTapProxy, type: CGEventType, event: CGEvent) -> Unmanaged<CGEvent>? {
         if let tapRecoveryResult = self.handleTapDisableEvent(type: type, event: event) {
             return tapRecoveryResult
@@ -549,17 +557,48 @@ final class GlobalHotkeyManager: NSObject {
             }
 
             if let assignment = self.promptShortcutAssignments.first(where: { $0.shortcut.matches(keyCode: keyCode, modifiers: eventModifiers) }) {
-                if self.asrService.isRunning {
-                    if self.isPromptModeRecordingProvider?() ?? false {
-                        DebugLogger.shared.info("Prompt shortcut pressed in Prompt mode - stopping", source: "GlobalHotkeyManager")
-                        self.stopRecordingIfNeeded()
+                switch self.hotkeyMode {
+                case .hold:
+                    if !self.isPromptAssignmentKeyPressed {
+                        self.cancelPendingReleaseStop(for: .promptAssignment)
+                        self.clearHoldModeStartTriggered(for: .promptAssignment)
+                        self.isPromptAssignmentKeyPressed = true
+                        DebugLogger.shared.info("Prompt shortcut pressed (hold mode) - starting", source: "GlobalHotkeyManager")
+                        self.triggerPromptSelection(assignment.selection)
+                        self.markHoldModeStartTriggered(for: .promptAssignment)
+                    }
+                case .automatic:
+                    if !self.isPromptAssignmentKeyPressed {
+                        self.isPromptAssignmentKeyPressed = true
+                        let isSameMode = self.asrService.isRunning && (self.isPromptModeRecordingProvider?() ?? false)
+                        self.beginAutomaticPress(for: .promptAssignment, wasTargetActive: isSameMode)
+                        if self.asrService.isRunning {
+                            if isSameMode {
+                                DebugLogger.shared.info("Prompt shortcut pressed (automatic, same mode) - waiting for release", source: "GlobalHotkeyManager")
+                            } else {
+                                DebugLogger.shared.info("Prompt shortcut pressed (automatic, switch mode)", source: "GlobalHotkeyManager")
+                                self.triggerPromptSelection(assignment.selection)
+                                self.markAutomaticPressStarted(for: .promptAssignment)
+                            }
+                        } else {
+                            DebugLogger.shared.info("Prompt shortcut triggered (automatic) - starting", source: "GlobalHotkeyManager")
+                            self.triggerPromptSelection(assignment.selection)
+                            self.markAutomaticPressStarted(for: .promptAssignment)
+                        }
+                    }
+                case .toggle:
+                    if self.asrService.isRunning {
+                        if self.isPromptModeRecordingProvider?() ?? false {
+                            DebugLogger.shared.info("Prompt shortcut pressed in Prompt mode - stopping", source: "GlobalHotkeyManager")
+                            self.stopRecordingIfNeeded()
+                        } else {
+                            DebugLogger.shared.info("Prompt shortcut pressed while recording - switching mode", source: "GlobalHotkeyManager")
+                            self.triggerPromptSelection(assignment.selection)
+                        }
                     } else {
-                        DebugLogger.shared.info("Prompt shortcut pressed while recording - switching mode", source: "GlobalHotkeyManager")
+                        DebugLogger.shared.info("Prompt shortcut triggered - starting", source: "GlobalHotkeyManager")
                         self.triggerPromptSelection(assignment.selection)
                     }
-                } else {
-                    DebugLogger.shared.info("Prompt shortcut triggered", source: "GlobalHotkeyManager")
-                    self.triggerPromptSelection(assignment.selection)
                 }
                 return nil
             }
@@ -789,6 +828,27 @@ final class GlobalHotkeyManager: NSObject {
                 return nil
             }
 
+            // Prompt assignment key up
+            // Note: Only check keyCode, not modifiers - user may release modifier before/with main key
+            if self.isPromptAssignmentKeyPressed,
+               let assignment = self.promptShortcutAssignments.first(where: { $0.shortcut.keyCode == keyCode })
+            {
+                _ = assignment
+                switch self.hotkeyMode {
+                case .hold:
+                    self.isPromptAssignmentKeyPressed = false
+                    _ = self.finishHoldModeStartTriggered(for: .promptAssignment)
+                    DebugLogger.shared.info("Prompt shortcut released (hold mode) - stopping", source: "GlobalHotkeyManager")
+                    self.stopRecordingAfterRelease(for: .promptAssignment, label: "Prompt shortcut")
+                case .automatic:
+                    self.isPromptAssignmentKeyPressed = false
+                    self.handleAutomaticKeyRelease(for: .promptAssignment, label: "Prompt shortcut")
+                case .toggle:
+                    break
+                }
+                return nil
+            }
+
             // Transcription key up
             // Note: Only check keyCode, not modifiers - user may release modifier before/with main key
             if self.isKeyPressed, keyCode == self.shortcut.keyCode {
@@ -925,6 +985,7 @@ final class GlobalHotkeyManager: NSObject {
         }
 
         return Unmanaged.passUnretained(event)
+        // swiftlint:enable cyclomatic_complexity function_body_length
     }
 
     private func handleTapDisableEvent(type: CGEventType, event: CGEvent) -> Unmanaged<CGEvent>? {
@@ -1045,6 +1106,9 @@ final class GlobalHotkeyManager: NSObject {
         case .rewriteMode:
             guard let provider = self.isRewriteRecordingProvider else { return true }
             return provider()
+        case .promptAssignment:
+            guard let provider = self.isPromptModeRecordingProvider else { return true }
+            return provider()
         }
     }
 
@@ -1103,6 +1167,8 @@ final class GlobalHotkeyManager: NSObject {
             return "Command mode"
         case .rewriteMode:
             return "Rewrite mode"
+        case .promptAssignment:
+            return "Prompt shortcut"
         }
     }
 
@@ -1188,7 +1254,7 @@ final class GlobalHotkeyManager: NSObject {
     func resetModifierOnlyShortcutTracking(reason: ModifierTrackingResetReason = .shortcutCapture) {
         let shouldStopActiveHold = self.hotkeyMode != .toggle
             && self.asrService.isRunning
-            && (self.isKeyPressed || self.isPromptModeKeyPressed || self.isCommandModeKeyPressed || self.isRewriteKeyPressed)
+            && (self.isKeyPressed || self.isPromptModeKeyPressed || self.isCommandModeKeyPressed || self.isRewriteKeyPressed || self.isPromptAssignmentKeyPressed)
 
         self.pressedModifierKeyCodes = []
         self.modifierOnlyKeyDown = false
@@ -1202,6 +1268,7 @@ final class GlobalHotkeyManager: NSObject {
         self.isPromptModeKeyPressed = false
         self.isCommandModeKeyPressed = false
         self.isRewriteKeyPressed = false
+        self.isPromptAssignmentKeyPressed = false
 
         if shouldStopActiveHold {
             switch reason {
@@ -1516,7 +1583,7 @@ final class GlobalHotkeyManager: NSObject {
     func setHotkeyMode(_ mode: HotkeyActivationMode) {
         let shouldStopActivePress = self.hotkeyMode != .toggle
             && self.asrService.isRunning
-            && (self.isKeyPressed || self.isPromptModeKeyPressed || self.isCommandModeKeyPressed || self.isRewriteKeyPressed)
+            && (self.isKeyPressed || self.isPromptModeKeyPressed || self.isCommandModeKeyPressed || self.isRewriteKeyPressed || self.isPromptAssignmentKeyPressed)
 
         self.hotkeyMode = mode
         self.pendingHoldModeStart?.cancel()
@@ -1527,6 +1594,7 @@ final class GlobalHotkeyManager: NSObject {
         self.isPromptModeKeyPressed = false
         self.isCommandModeKeyPressed = false
         self.isRewriteKeyPressed = false
+        self.isPromptAssignmentKeyPressed = false
 
         if shouldStopActivePress {
             self.stopRecordingIfNeeded()

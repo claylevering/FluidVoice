@@ -186,11 +186,11 @@ extension AIEnhancementSettingsView {
         .opacity(isEnabled ? 1 : 0.68)
         .background(
             shape
-                .fill(Color(nsColor: .controlBackgroundColor))
+                .fill(self.theme.palette.cardBackground.opacity(0.7))
                 .overlay(
                     shape
                         .stroke(
-                            isSelectedRow ? Color.fluidGreen : (isHovering ? self.theme.palette.cardBorder : self.theme.palette.cardBorder.opacity(0.5)),
+                            isSelectedRow ? Color.fluidGreen : (isHovering ? self.theme.palette.cardBorder.opacity(0.5) : self.theme.palette.cardBorder.opacity(0.3)),
                             lineWidth: isSelectedRow ? 2 : 1
                         )
                 )
@@ -222,7 +222,7 @@ extension AIEnhancementSettingsView {
 
         return ZStack {
             RoundedRectangle(cornerRadius: 10, style: .continuous)
-                .fill(Color(nsColor: .controlBackgroundColor))
+                .fill(self.theme.palette.contentBackground)
                 .overlay(
                     RoundedRectangle(cornerRadius: 10, style: .continuous)
                         .stroke(isSelected ? Color.fluidGreen.opacity(0.5) : self.theme.palette.cardBorder.opacity(0.5), lineWidth: 1)
@@ -404,7 +404,7 @@ extension AIEnhancementSettingsView {
             .padding(.vertical, 3)
             .background(
                 Capsule(style: .continuous)
-                    .fill(Color(nsColor: .controlBackgroundColor))
+                    .fill(self.theme.palette.contentBackground)
                     .overlay(
                         Capsule(style: .continuous)
                             .stroke(tone.opacity(isProminent ? 0.5 : 0.3), lineWidth: 1)
@@ -1422,10 +1422,10 @@ extension AIEnhancementSettingsView {
         .opacity(isEnabled ? 1 : 0.68)
         .background(
             shape
-                .fill(Color(nsColor: .controlBackgroundColor))
+                .fill(self.theme.palette.cardBackground.opacity(0.7))
                 .overlay(
                     shape
-                        .stroke(self.theme.palette.cardBorder.opacity(0.5), lineWidth: 1)
+                        .stroke(self.theme.palette.cardBorder.opacity(0.3), lineWidth: 1)
                 )
         )
     }

@@ -3286,7 +3286,7 @@ extension ContentView {
 
         if selection == .privateAI {
             providerID = PrivateAIProviderFeature.shared.providerID
-            modelName = PrivateAIModelRegistry.defaultModelID
+            modelName = PrivateAIIntegrationService.configuredModelID
         } else {
             let configuration = SettingsStore.shared.dictationPromptConfiguration(for: selection)
             providerID = configuration.providerID.trimmingCharacters(in: .whitespacesAndNewlines)

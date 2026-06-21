@@ -49,6 +49,7 @@ final class AIEnhancementSettingsViewModel: ObservableObject {
     @Published var selectedProviderID: String {
         didSet {
             self.settings.selectedProviderID = self.selectedProviderID
+            self.syncPromptSelectionForSelectedProvider()
         }
     }
 
@@ -115,11 +116,14 @@ final class AIEnhancementSettingsViewModel: ObservableObject {
     @Published var draftPromptMode: SettingsStore.PromptMode = .dictate
     @Published var draftIncludeContext: Bool = false
     @Published var promptEditorSessionID: UUID = .init()
+    @Published var pendingNewPromptConfiguration: SettingsStore.DictationPromptConfiguration?
 
     // Prompt Deletion UI
     @Published var showingDeletePromptConfirm: Bool = false
     @Published var pendingDeletePromptID: String? = nil
     @Published var pendingDeletePromptName: String = ""
+
+    private var newPromptShortcutCancellable: AnyCancellable?
 
     init(settings: SettingsStore, menuBarManager: MenuBarManager, promptTest: DictationPromptTestCoordinator) {
         self.settings = settings
@@ -127,6 +131,17 @@ final class AIEnhancementSettingsViewModel: ObservableObject {
         self.promptTest = promptTest
         self.openAIBaseURL = ""
         self.selectedProviderID = settings.selectedProviderID
+
+        self.newPromptShortcutCancellable = NotificationCenter.default
+            .publisher(for: .newPromptShortcutRecorded)
+            .sink { [weak self] notification in
+                guard let self,
+                      let shortcut = notification.userInfo?["shortcut"] as? HotkeyShortcut
+                else { return }
+                var config = self.pendingNewPromptConfiguration ?? SettingsStore.DictationPromptConfiguration()
+                config.shortcut = shortcut
+                self.pendingNewPromptConfiguration = config
+            }
     }
 
     func onAppear() {
@@ -215,6 +230,7 @@ final class AIEnhancementSettingsViewModel: ObservableObject {
         self.selectSoleVerifiedProviderIfNeeded()
         self.connectionStatus = self.connectionStatusByProvider[self.selectedProviderID] ?? .unknown
         self.refreshProviderItems()
+        self.syncPromptSelectionForSelectedProvider()
 
         DebugLogger.shared.debug(
             "loadSettings complete: provider=\(self.selectedProviderID), currentProvider=\(self.currentProvider), model=\(self.selectedModel), baseURL=\(self.openAIBaseURL)",
@@ -1221,6 +1237,32 @@ final class AIEnhancementSettingsViewModel: ObservableObject {
         return []
     }
 
+    func selectedModel(for providerID: String) -> String {
+        let key = self.providerKey(for: providerID)
+        let stored = (self.selectedModelByProvider[key] ?? "")
+            .trimmingCharacters(in: .whitespacesAndNewlines)
+        if !stored.isEmpty { return stored }
+        if providerID == self.selectedProviderID {
+            return self.selectedModel.trimmingCharacters(in: .whitespacesAndNewlines)
+        }
+        return ""
+    }
+
+    func selectModel(_ modelName: String, for providerID: String) {
+        let trimmedModel = modelName.trimmingCharacters(in: .whitespacesAndNewlines)
+        guard !trimmedModel.isEmpty else { return }
+
+        let key = self.providerKey(for: providerID)
+        self.selectedModelByProvider[key] = trimmedModel
+        self.settings.selectedModelByProvider = self.selectedModelByProvider
+
+        if providerID == self.selectedProviderID {
+            self.availableModels = self.models(for: providerID)
+            self.selectedModel = trimmedModel
+            self.syncPromptSelectionForSelectedProvider()
+        }
+    }
+
     func fetchModels(for providerID: String) async {
         let baseURL = self.providerBaseURL(for: providerID)
         let key = self.providerKey(for: providerID)
@@ -1559,6 +1601,7 @@ final class AIEnhancementSettingsViewModel: ObservableObject {
         self.selectedDictationPromptID = self.settings.selectedDictationPromptID
         self.selectedEditPromptID = self.settings.selectedEditPromptID
 
+        NotificationCenter.default.post(name: .dictationPromptShortcutsChanged, object: nil)
         self.clearPendingDeletePrompt()
     }
 
@@ -1583,8 +1626,15 @@ final class AIEnhancementSettingsViewModel: ObservableObject {
     func openNewPromptEditor(prefillMode: SettingsStore.PromptMode = .edit) {
         self.draftPromptMode = prefillMode.normalized
         self.draftIncludeContext = (self.draftPromptMode == .edit)
-        self.draftPromptName = "New Prompt"
+        self.draftPromptName = ""
         self.draftPromptText = ""
+        let defaultProviderID = self.defaultVerifiedPromptProviderID()
+        let defaultModel = defaultProviderID.isEmpty ? "" : self.selectedModel(for: defaultProviderID)
+        self.pendingNewPromptConfiguration = SettingsStore.DictationPromptConfiguration(
+            shortcut: nil,
+            providerID: defaultProviderID,
+            modelName: defaultModel
+        )
         self.promptEditorSessionID = UUID()
         self.promptEditorMode = .newPrompt(prefillMode: self.draftPromptMode)
     }
@@ -1604,6 +1654,7 @@ final class AIEnhancementSettingsViewModel: ObservableObject {
         self.draftPromptText = ""
         self.draftPromptMode = .dictate
         self.draftIncludeContext = false
+        self.pendingNewPromptConfiguration = nil
         self.promptTest.deactivate()
     }
 
@@ -1650,6 +1701,15 @@ final class AIEnhancementSettingsViewModel: ObservableObject {
                 updatedAt: now
             )
             profiles.append(newProfile)
+
+            if let pendingConfig = self.pendingNewPromptConfiguration,
+               self.draftPromptMode.normalized == .dictate
+            {
+                self.settings.setDictationPromptConfiguration(pendingConfig, for: .profile(newProfile.id))
+                if pendingConfig.shortcut != nil {
+                    NotificationCenter.default.post(name: .dictationPromptShortcutsChanged, object: nil)
+                }
+            }
         }
 
         self.settings.dictationPromptProfiles = profiles
@@ -1826,23 +1886,96 @@ final class AIEnhancementSettingsViewModel: ObservableObject {
         self.settings.dictationPromptSelection == .privateAI
     }
 
+    func dictationPromptSelection(for slot: SettingsStore.DictationShortcutSlot) -> SettingsStore.DictationPromptSelection {
+        self.settings.dictationPromptSelection(for: slot)
+    }
+
+    func isDictationPromptSelection(
+        _ selection: SettingsStore.DictationPromptSelection,
+        for slot: SettingsStore.DictationShortcutSlot
+    ) -> Bool {
+        if slot == .secondary, !self.settings.promptModeShortcutEnabled { return false }
+        return self.settings.dictationPromptSelection(for: slot) == selection
+    }
+
+    func setDictationPromptSelection(
+        _ selection: SettingsStore.DictationPromptSelection,
+        for slot: SettingsStore.DictationShortcutSlot
+    ) {
+        guard selection != .privateAI || self.isPrivateAIPromptAvailable() else { return }
+        self.settings.setDictationPromptSelection(selection, for: slot)
+        self.refreshPromptSelectionState()
+    }
+
+    func setSecondaryDictationPromptSelection(_ selection: SettingsStore.DictationPromptSelection) {
+        guard selection != .privateAI || self.isPrivateAIPromptAvailable() else { return }
+        self.settings.promptModeShortcutEnabled = true
+        self.settings.setDictationPromptSelection(selection, for: .secondary)
+        self.refreshPromptSelectionState()
+    }
+
+    func secondaryDictationShortcutDisplay() -> String {
+        self.settings.promptModeHotkeyShortcut.displayString
+    }
+
+    func verifiedPromptProviders() -> [ProviderItemData] {
+        self.cachedVerifiedProviderItems.filter { provider in
+            provider.id != PrivateAIProviderFeature.shared.providerID
+        }
+    }
+
+    func defaultVerifiedPromptProviderID() -> String {
+        let verified = self.verifiedPromptProviders()
+        if verified.contains(where: { $0.id == self.selectedProviderID }) {
+            return self.selectedProviderID
+        }
+        return verified.first?.id ?? ""
+    }
+
+    func activeDictationModelSummary(isPrivateAI: Bool = false) -> String {
+        if isPrivateAI {
+            return PrivateAIProviderFeature.displayName
+        }
+
+        let providerID = self.selectedProviderID.trimmingCharacters(in: .whitespacesAndNewlines)
+        guard !providerID.isEmpty else { return "Choose provider first" }
+
+        let providerName = self.providerDisplayName(for: providerID)
+        let providerKey = self.providerKey(for: providerID)
+        let modelName = (self.selectedModelByProvider[providerKey] ?? self.selectedModel)
+            .trimmingCharacters(in: .whitespacesAndNewlines)
+        guard !modelName.isEmpty else { return providerName }
+        return "\(providerName) - \(modelName)"
+    }
+
     func selectPrivateAIPromptIfAvailable() {
         guard self.isPrivateAIPromptAvailable() else { return }
         self.settings.setDictationPromptSelection(.privateAI)
-        self.selectedDictationPromptID = self.settings.selectedDictationPromptID
-        self.isDictationPromptOff = self.settings.isDictationPromptOff
-        self.isEditPromptOff = self.settings.isEditPromptOff
+        self.refreshPromptSelectionState()
+    }
+
+    private func syncPromptSelectionForSelectedProvider() {
+        guard self.isPrivateAIPromptAvailable(),
+              self.settings.dictationPromptSelection(for: .primary) != .privateAI
+        else {
+            return
+        }
+
+        self.settings.setDictationPromptSelection(.privateAI, for: .primary)
+        self.refreshPromptSelectionState()
     }
 
     func selectPrimaryDictationPromptOff() {
         self.settings.setDictationPromptSelection(.off)
-        self.selectedDictationPromptID = self.settings.selectedDictationPromptID
-        self.isDictationPromptOff = self.settings.isDictationPromptOff
-        self.isEditPromptOff = self.settings.isEditPromptOff
+        self.refreshPromptSelectionState()
     }
 
     func setPromptSelectionOff(_ isOff: Bool, for mode: SettingsStore.PromptMode) {
         self.settings.setPromptOff(isOff, for: mode)
+        self.refreshPromptSelectionState()
+    }
+
+    private func refreshPromptSelectionState() {
         self.selectedDictationPromptID = self.settings.selectedDictationPromptID
         self.selectedEditPromptID = self.settings.selectedEditPromptID
         self.isDictationPromptOff = self.settings.isDictationPromptOff

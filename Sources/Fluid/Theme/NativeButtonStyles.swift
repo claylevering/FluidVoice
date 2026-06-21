@@ -351,6 +351,9 @@ struct CompactButtonStyle: ButtonStyle {
         var body: some View {
             let border = self.borderColor ?? (self.isReady ? self.theme.palette.accent : self.theme.palette.cardBorder)
             let foregroundColor = self.foreground ?? self.theme.palette.primaryText
+            let borderOpacity = self.borderColor == nil
+                ? (self.isHovered ? 0.56 : 0.38)
+                : (self.isHovered ? 0.64 : 0.48)
 
             self.configuration.label
                 .fontWeight(.medium)
@@ -363,16 +366,16 @@ struct CompactButtonStyle: ButtonStyle {
                         .fill(self.theme.palette.cardBackground)
                         .overlay(
                             self.shape.stroke(
-                                border.opacity(self.isHovered ? 0.45 : 0.25),
+                                border.opacity(borderOpacity),
                                 lineWidth: 1
                             )
                         )
                 )
                 .shadow(
-                    color: border.opacity(self.isHovered ? 0.3 : 0.12),
-                    radius: self.isHovered ? self.theme.metrics.cardShadow.radius - 2 : 2,
+                    color: border.opacity(self.isHovered ? 0.18 : 0.06),
+                    radius: self.isHovered ? 4 : 1.5,
                     x: 0,
-                    y: self.isHovered ? self.theme.metrics.cardShadow.y - 1 : 1
+                    y: self.isHovered ? 1 : 0.5
                 )
                 .scaleEffect(FluidInteractionVisuals.scale(isPressed: self.configuration.isPressed, isHovered: self.isHovered))
                 .animation(FluidInteractionVisuals.hoverAnimation, value: self.isHovered)
@@ -555,7 +558,7 @@ struct FluidPickerDisclosureIcon: View {
 
 struct SearchablePickerControlChrome: ViewModifier {
     @Environment(\.theme) private var theme
-    let width: CGFloat
+    let width: CGFloat?
     let height: CGFloat?
     let usesMaterial: Bool
     let showsShadow: Bool
@@ -566,6 +569,7 @@ struct SearchablePickerControlChrome: ViewModifier {
         let shape = RoundedRectangle(cornerRadius: picker.cornerRadius, style: .continuous)
         let control = content
             .frame(width: self.width, alignment: .leading)
+            .frame(maxWidth: self.width == nil ? .infinity : nil, alignment: .leading)
             .padding(.horizontal, picker.horizontalPadding)
             .padding(.vertical, picker.verticalPadding)
             .frame(height: self.height)
@@ -624,8 +628,8 @@ extension View {
     }
 
     func searchablePickerControlChrome(
-        width: CGFloat,
-        height: CGFloat?,
+        width: CGFloat? = nil,
+        height: CGFloat? = nil,
         usesMaterial: Bool = false,
         showsShadow: Bool = false
     ) -> some View {

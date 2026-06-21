@@ -74,6 +74,8 @@ struct AIEnhancementSettingsView: View {
     @ObservedObject var settings: SettingsStore
     @ObservedObject var promptTest: DictationPromptTestCoordinator
     let theme: AppTheme
+    @Binding var activeShortcutRecordingTarget: ShortcutRecordingTarget?
+    @Binding var shortcutRecordingMessage: String?
     @State var expandedProviderID: String? = nil
     @State var providerSearchText: String = ""
     @State var privateAISelectedModelID: String = PrivateAIIntegrationService.configuredModelID
@@ -84,6 +86,12 @@ struct AIEnhancementSettingsView: View {
     @State var selectedPromptMode: SettingsStore.PromptMode = .dictate
     @State var hoveredPromptModeKey: String? = nil
     @State var hoveredPromptScopeKey: String? = nil
+    @State var isPromptProfilesHelpPresented: Bool = false
+    @State var promptEditorPrimarySelectionDraft: SettingsStore.DictationPromptSelection? = nil
+    @State var promptEditorShortcutDraft: HotkeyShortcut? = nil
+    @State var promptEditorProviderIDDraft: String = ""
+    @State var promptEditorModelDraft: String = ""
+    @State var promptEditorOriginalConfiguration: SettingsStore.DictationPromptConfiguration? = nil
 
     var body: some View {
         self.aiConfigurationCard

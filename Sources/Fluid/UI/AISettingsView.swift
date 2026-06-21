@@ -37,6 +37,11 @@ enum PromptEditorMode: Identifiable, Equatable {
         return nil
     }
 
+    var isNewPrompt: Bool {
+        if case .newPrompt = self { return true }
+        return false
+    }
+
     var mode: SettingsStore.PromptMode? {
         switch self {
         case let .defaultPrompt(mode): return mode
@@ -68,16 +73,19 @@ enum AISettingsLayout {
     static let labelWidth: CGFloat = 110
     static let pickerWidth: CGFloat = 220
     static let controlHeight: CGFloat = 34
+    static let providerRowControlHeight: CGFloat = 34
     static let actionMinWidth: CGFloat = 120
     static let compactActionMinWidth: CGFloat = 96
     static let wideActionMinWidth: CGFloat = 140
     static let primaryActionMinWidth: CGFloat = 150
     static let promptActionMinWidth: CGFloat = 90
-    static let promptModeMinHeight: CGFloat = 430
+    static let promptModeMinHeight: CGFloat = 260
     static let promptModeHintHeight: CGFloat = 18
     static let promptInlinePickerWidth: CGFloat = 145
     static let promptInlineModelWidth: CGFloat = 180
     static let promptScopeLabelWidth: CGFloat = 110
+    static let promptEditorLabelColumnWidth: CGFloat = 220
+    static let promptEditorControlColumnWidth: CGFloat = 452
     static let rowLeadingIndent: CGFloat = labelWidth + 12
 }
 
@@ -116,7 +124,9 @@ struct AISettingsView: View {
                     viewModel: self.enhancementViewModel,
                     settings: self.enhancementViewModel.settings,
                     promptTest: self.enhancementViewModel.promptTest,
-                    theme: self.theme
+                    theme: self.theme,
+                    activeShortcutRecordingTarget: .constant(nil),
+                    shortcutRecordingMessage: .constant(nil)
                 )
             }
             .padding(14)

@@ -29,6 +29,7 @@ final class SettingsStore: ObservableObject {
         self.scrubSavedProviderAPIKeys()
         self.migrateDictationPromptProfilesIfNeeded()
         self.migrateLegacyDictationAIPreferenceIfNeeded()
+        self.migrateSecondaryPromptShortcutIfNeeded()
         self.normalizePromptSelectionsIfNeeded()
         self.normalizeProviderSelectionForCurrentVerificationState()
         self.migrateOverlayBottomOffsetTo50IfNeeded()
@@ -220,6 +221,18 @@ final class SettingsStore: ObservableObject {
         }
     }
 
+    struct DictationPromptConfiguration: Codable, Equatable {
+        var shortcut: HotkeyShortcut?
+        var providerID: String
+        var modelName: String
+
+        init(shortcut: HotkeyShortcut? = nil, providerID: String = "", modelName: String = "") {
+            self.shortcut = shortcut
+            self.providerID = providerID
+            self.modelName = modelName
+        }
+    }
+
     enum PromptResolutionSource: String {
         case appBindingProfile
         case appBindingDefault
@@ -279,6 +292,25 @@ final class SettingsStore: ObservableObject {
         }
     }
 
+    var dictationPromptConfigurations: [String: DictationPromptConfiguration] {
+        get {
+            guard let data = self.defaults.data(forKey: Keys.dictationPromptConfigurations),
+                  let decoded = try? JSONDecoder().decode([String: DictationPromptConfiguration].self, from: data)
+            else {
+                return [:]
+            }
+            return decoded
+        }
+        set {
+            objectWillChange.send()
+            if let encoded = try? JSONEncoder().encode(newValue) {
+                self.defaults.set(encoded, forKey: Keys.dictationPromptConfigurations)
+            } else {
+                self.defaults.removeObject(forKey: Keys.dictationPromptConfigurations)
+            }
+        }
+    }
+
     /// Selected dictation prompt profile ID. `nil` means "Default".
     var selectedDictationPromptID: String? {
         get {
@@ -321,7 +353,6 @@ final class SettingsStore: ObservableObject {
 
     func dictationPromptSelection(for slot: DictationShortcutSlot) -> DictationPromptSelection {
         if self.isDictationPromptOff(for: slot) { return .off }
-        if PrivateAIProviderPromptFormat.isAvailable(settings: self) { return .privateAI }
         if let promptID = self.selectedDictationPromptID(for: slot) {
             if promptID == PrivateAIProviderPromptFormat.promptSelectionID {
                 return PrivateAIProviderPromptFormat.isAvailable(settings: self) ? .privateAI : .default
@@ -343,6 +374,76 @@ final class SettingsStore: ObservableObject {
         }
         self.setDictationPromptOff(selection == .off, for: slot)
         self.setSelectedDictationPromptID(selectedID, for: slot)
+    }
+
+    func dictationPromptConfigurationKey(for selection: DictationPromptSelection) -> String? {
+        switch selection {
+        case .off, .privateAI:
+            return nil
+        case .default:
+            return "__default__"
+        case let .profile(promptID):
+            let trimmed = promptID.trimmingCharacters(in: .whitespacesAndNewlines)
+            return trimmed.isEmpty ? nil : "profile:\(trimmed)"
+        }
+    }
+
+    func dictationPromptSelection(forConfigurationKey key: String) -> DictationPromptSelection? {
+        if key == "__default__" {
+            return .default
+        }
+        if key.hasPrefix("profile:") {
+            let id = String(key.dropFirst("profile:".count))
+            guard self.dictationPromptProfiles.contains(where: { $0.id == id && $0.mode.normalized == .dictate }) else { return nil }
+            return .profile(id)
+        }
+        return nil
+    }
+
+    func dictationPromptConfiguration(for selection: DictationPromptSelection) -> DictationPromptConfiguration {
+        guard let key = self.dictationPromptConfigurationKey(for: selection) else {
+            return DictationPromptConfiguration()
+        }
+        return self.dictationPromptConfigurations[key] ?? DictationPromptConfiguration()
+    }
+
+    func setDictationPromptConfiguration(_ configuration: DictationPromptConfiguration, for selection: DictationPromptSelection) {
+        guard let key = self.dictationPromptConfigurationKey(for: selection) else { return }
+        let providerID = configuration.providerID.trimmingCharacters(in: .whitespacesAndNewlines)
+        let modelName = configuration.modelName.trimmingCharacters(in: .whitespacesAndNewlines)
+        var configurations = self.dictationPromptConfigurations
+        if configuration.shortcut == nil, providerID.isEmpty, modelName.isEmpty {
+            configurations.removeValue(forKey: key)
+        } else {
+            configurations[key] = DictationPromptConfiguration(
+                shortcut: configuration.shortcut,
+                providerID: providerID,
+                modelName: modelName
+            )
+        }
+        self.dictationPromptConfigurations = configurations
+    }
+
+    func removeDictationPromptConfiguration(for selection: DictationPromptSelection) {
+        guard let key = self.dictationPromptConfigurationKey(for: selection) else { return }
+        var configurations = self.dictationPromptConfigurations
+        configurations.removeValue(forKey: key)
+        self.dictationPromptConfigurations = configurations
+    }
+
+    func dictationPromptShortcutAssignments() -> [(selection: DictationPromptSelection, shortcut: HotkeyShortcut)] {
+        self.dictationPromptConfigurations.compactMap { key, configuration in
+            guard let shortcut = configuration.shortcut else { return nil }
+            if key == "__default__" {
+                return (.default, shortcut)
+            }
+            if key.hasPrefix("profile:") {
+                let id = String(key.dropFirst("profile:".count))
+                guard self.dictationPromptProfiles.contains(where: { $0.id == id && $0.mode.normalized == .dictate }) else { return nil }
+                return (.profile(id), shortcut)
+            }
+            return nil
+        }
     }
 
     /// Convenience: currently selected profile, or nil if Default/invalid selection.
@@ -614,6 +715,7 @@ final class SettingsStore: ObservableObject {
     /// Re-run prompt/profile normalization after profile mutations.
     func reconcilePromptStateAfterProfileChanges() {
         self.normalizePromptSelectionsIfNeeded()
+        self.normalizeDictationPromptConfigurationsIfNeeded()
     }
 
     private static func normalizeAppBundleID(_ value: String?) -> String? {
@@ -2769,6 +2871,14 @@ final class SettingsStore: ObservableObject {
         self.defaults.set(shouldStartOff, forKey: Keys.dictationPromptOff)
     }
 
+    private func migrateSecondaryPromptShortcutIfNeeded() {
+        guard self.defaults.bool(forKey: Keys.secondaryPromptShortcutRemoved) == false else { return }
+        self.defaults.set(false, forKey: Keys.promptModeShortcutEnabled)
+        self.defaults.set(true, forKey: Keys.secondaryDictationPromptOff)
+        self.defaults.removeObject(forKey: Keys.promptModeSelectedPromptID)
+        self.defaults.set(true, forKey: Keys.secondaryPromptShortcutRemoved)
+    }
+
     private func normalizePromptSelectionsIfNeeded() {
         if self.defaults.object(forKey: Keys.secondaryDictationPromptOff) == nil {
             self.defaults.set(false, forKey: Keys.secondaryDictationPromptOff)
@@ -2899,6 +3009,25 @@ final class SettingsStore: ObservableObject {
 
         if didMutateBindings || normalizedBindings.count != self.appPromptBindings.count {
             self.appPromptBindings = normalizedBindings
+        }
+    }
+
+    private func normalizeDictationPromptConfigurationsIfNeeded() {
+        let validKeys = Set(
+            ["__default__"] + self.dictationPromptProfiles
+                .filter { $0.mode.normalized == .dictate }
+                .map { "profile:\($0.id)" }
+        )
+        var configurations = self.dictationPromptConfigurations
+        let originalCount = configurations.count
+        configurations = configurations.filter { key, configuration in
+            validKeys.contains(key) &&
+                (configuration.shortcut != nil ||
+                    !configuration.providerID.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty ||
+                    !configuration.modelName.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty)
+        }
+        if configurations.count != originalCount {
+            self.dictationPromptConfigurations = configurations
         }
     }
 
@@ -4015,6 +4144,8 @@ private extension SettingsStore {
         static let promptModeShortcutEnabled = "PromptModeShortcutEnabled"
         static let promptModeSelectedPromptID = "PromptModeSelectedPromptID"
         static let secondaryDictationPromptOff = "SecondaryDictationPromptOff"
+        static let secondaryPromptShortcutRemoved = "SecondaryPromptShortcutRemoved"
+        static let dictationPromptConfigurations = "DictationPromptConfigurations"
 
         // Rewrite Mode Keys
         static let rewriteModeHotkeyShortcut = "RewriteModeHotkeyShortcut"

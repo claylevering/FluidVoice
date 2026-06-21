@@ -685,31 +685,6 @@ struct SettingsView: View {
 
                                     self.shortcutRow(
                                         content: .init(
-                                            icon: "text.bubble.fill",
-                                            iconColor: .secondary,
-                                            title: "Secondary Dictation Shortcut",
-                                            description: "Defaults to AI Enhancement, but can use Off, Default, or any custom prompt."
-                                        ),
-                                        shortcut: self.promptModeShortcut,
-                                        isRecording: self.isRecording(.secondaryDictation),
-                                        isAnyRecordingActive: self.isRecordingAnyShortcut,
-                                        recordingMessage: self.isRecording(.secondaryDictation) ? self.shortcutRecordingMessage : nil,
-                                        isEnabled: self.$promptModeShortcutEnabled,
-                                        onChangePressed: {
-                                            DebugLogger.shared.debug("Starting to record new prompt mode shortcut", source: "SettingsView")
-                                            self.shortcutRecordingMessage = nil
-                                            self.activeShortcutRecordingTarget = .secondaryDictation
-                                        }
-                                    )
-
-                                    if self.promptModeShortcutEnabled {
-                                        self.dictationPromptPicker(for: .secondary)
-                                    }
-
-                                    Divider().opacity(0.2).padding(.vertical, 4)
-
-                                    self.shortcutRow(
-                                        content: .init(
                                             icon: "terminal.fill",
                                             iconColor: .secondary,
                                             title: "Command Mode",

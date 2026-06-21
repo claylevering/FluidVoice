@@ -628,15 +628,15 @@ extension AIEnhancementSettingsView {
                     selectedModel: self.privateAIModelBinding,
                     selectionEnabled: !isBusy,
                     controlWidth: 180,
-                    controlHeight: 30
+                    controlHeight: AISettingsLayout.providerRowControlHeight
                 )
 
                 Button(action: { self.revealPrivateAIModelFolder() }) {
                     Image(systemName: "folder")
                         .font(.system(size: 12, weight: .semibold))
                 }
-                .fluidButton(.compact, size: .compact)
-                .frame(width: 28, height: 28)
+                .fluidCompactButton(isReady: false)
+                .frame(width: AISettingsLayout.providerRowControlHeight, height: AISettingsLayout.providerRowControlHeight)
                 .help("Open downloaded model folder")
             }
 
@@ -1229,7 +1229,7 @@ extension AIEnhancementSettingsView {
                     }
                 }
 
-                HStack(spacing: 10) {
+                HStack(spacing: 8) {
                     Text("Model")
                         .font(.system(size: 12, weight: .medium))
                         .foregroundStyle(.secondary)
@@ -1238,15 +1238,30 @@ extension AIEnhancementSettingsView {
                     SearchableModelPicker(
                         models: models,
                         selectedModel: self.modelBinding(for: item.id),
-                        onRefresh: {
-                            Task { await self.viewModel.fetchModelsForCurrentProvider() }
-                        },
-                        isRefreshing: isRefreshing,
-                        refreshEnabled: canFetchModels,
                         selectionEnabled: hasModels,
                         controlWidth: 180,
-                        controlHeight: 30
+                        controlHeight: AISettingsLayout.providerRowControlHeight
                     )
+
+                    Button(action: {
+                        Task { await self.viewModel.fetchModelsForCurrentProvider() }
+                    }) {
+                        ZStack {
+                            if isRefreshing {
+                                ProgressView()
+                                    .scaleEffect(0.6)
+                                    .frame(width: 16, height: 16)
+                            } else {
+                                Image(systemName: "arrow.clockwise")
+                                    .font(.system(size: 12, weight: .semibold))
+                            }
+                        }
+                        .frame(width: AISettingsLayout.providerRowControlHeight, height: AISettingsLayout.providerRowControlHeight)
+                    }
+                    .fluidCompactButton(isReady: false)
+                    .disabled(isRefreshing || !canFetchModels)
+                    .opacity(canFetchModels ? 1 : 0.45)
+                    .help("Refresh model list")
 
                     self.reasoningButton(for: item.id)
                 }
@@ -1466,85 +1481,114 @@ extension AIEnhancementSettingsView {
 
                 Spacer()
 
-                if isPrivateAIProvider {
-                    SearchableModelPicker(
-                        models: PrivateAIModelRegistry.modelIDs(),
-                        selectedModel: self.privateAIModelBinding,
-                        selectionEnabled: !isFluidBusy,
-                        controlWidth: 180,
-                        controlHeight: 28
-                    )
-                } else {
-                    SearchableModelPicker(
-                        models: models,
-                        selectedModel: self.modelBinding(for: item.id),
-                        onRefresh: {
+                // Model picker + companion button zone (aligned across all providers)
+                HStack(spacing: 8) {
+                    if isPrivateAIProvider {
+                        SearchableModelPicker(
+                            models: PrivateAIModelRegistry.modelIDs(),
+                            selectedModel: self.privateAIModelBinding,
+                            selectionEnabled: !isFluidBusy,
+                            controlWidth: 180,
+                            controlHeight: AISettingsLayout.providerRowControlHeight
+                        )
+
+                        // Folder button — same slot as refresh for non-FI
+                        Button(action: { self.revealPrivateAIModelFolder() }) {
+                            Image(systemName: "folder")
+                                .font(.system(size: 12, weight: .semibold))
+                        }
+                        .fluidCompactButton(isReady: false)
+                        .frame(width: AISettingsLayout.providerRowControlHeight, height: AISettingsLayout.providerRowControlHeight)
+                        .help("Open downloaded model folder")
+                    } else {
+                        SearchableModelPicker(
+                            models: models,
+                            selectedModel: self.modelBinding(for: item.id),
+                            selectionEnabled: hasModels,
+                            controlWidth: 180,
+                            controlHeight: AISettingsLayout.providerRowControlHeight
+                        )
+
+                        // Refresh button — same slot as folder for FI
+                        Button(action: {
                             self.activateProvider(item.id)
-                            await self.viewModel.fetchModelsForCurrentProvider()
-                        },
-                        isRefreshing: isRefreshing,
-                        refreshEnabled: canFetchModels,
-                        selectionEnabled: hasModels,
-                        controlWidth: 180,
-                        controlHeight: 28
-                    )
+                            Task { await self.viewModel.fetchModelsForCurrentProvider() }
+                        }) {
+                            ZStack {
+                                if isRefreshing {
+                                    ProgressView()
+                                        .scaleEffect(0.6)
+                                        .frame(width: 16, height: 16)
+                                } else {
+                                    Image(systemName: "arrow.clockwise")
+                                        .font(.system(size: 12, weight: .semibold))
+                                }
+                            }
+                            .frame(width: AISettingsLayout.providerRowControlHeight, height: AISettingsLayout.providerRowControlHeight)
+                        }
+                        .fluidCompactButton(isReady: false)
+                        .disabled(isRefreshing || !canFetchModels)
+                        .opacity(canFetchModels ? 1 : 0.45)
+                        .help("Refresh model list")
+                    }
                 }
 
-                if isPrivateAIProvider {
-                    if isFluidDownloading || !isFluidInstalled {
-                        Button(action: { self.downloadPrivateAIModel(fluidModel) }) {
-                            HStack(spacing: 5) {
-                                if isFluidDownloading {
-                                    ProgressView()
-                                        .controlSize(.mini)
-                                        .fixedSize()
+                // Action button zone (Think + Edit for non-FI, Download/Verify for FI, empty when verified)
+                HStack(spacing: 6) {
+                    if isPrivateAIProvider {
+                        if isFluidDownloading || !isFluidInstalled {
+                            Button(action: { self.downloadPrivateAIModel(fluidModel) }) {
+                                HStack(spacing: 5) {
+                                    if isFluidDownloading {
+                                        ProgressView()
+                                            .controlSize(.mini)
+                                            .fixedSize()
+                                    }
+                                    Text(isFluidDownloading ? Self.downloadButtonText(progress: fluidDownloadProgress) : "Download")
+                                        .font(.system(size: 12, weight: .semibold))
                                 }
-                                Text(isFluidDownloading ? Self.downloadButtonText(progress: fluidDownloadProgress) : "Download")
-                                    .font(.system(size: 12, weight: .semibold))
+                            }
+                            .fluidButton(.accent, size: .small)
+                            .disabled(!fluidModel.canDownload || isFluidBusy)
+                            .help(fluidModel.canDownload ? "Download and verify selected model" : "Download URL is not configured yet")
+                        } else if !isFluidVerified || hasFluidLoadFailure {
+                            Button(action: { self.verifyPrivateAIConnection(fluidModel) }) {
+                                HStack(spacing: 5) {
+                                    if isFluidLoading || isFluidTesting {
+                                        ProgressView()
+                                            .controlSize(.mini)
+                                            .fixedSize()
+                                    }
+                                    Text((isFluidLoading || isFluidTesting) ? "Loading..." : "Verify")
+                                        .font(.system(size: 12, weight: .semibold))
+                                }
+                            }
+                            .fluidButton(.accent, size: .small)
+                            .disabled(isFluidBusy)
+                            .help("Verify selected model")
+                        }
+
+                        Spacer(minLength: 0)
+                    } else {
+                        self.reasoningButton(for: item.id)
+
+                        Button("Edit") {
+                            self.activateProvider(item.id)
+                            if isEditing {
+                                self.viewModel.clearEditProviderDraft()
+                                self.viewModel.setEditingAPIKey(false, for: item.id)
+                            } else {
+                                self.viewModel.startEditingProvider()
+                                self.viewModel.setEditingAPIKey(true, for: item.id)
                             }
                         }
-                        .fluidButton(.accent, size: .small)
-                        .disabled(!fluidModel.canDownload || isFluidBusy)
-                        .help(fluidModel.canDownload ? "Download and verify selected model" : "Download URL is not configured yet")
-                    } else if !isFluidVerified || hasFluidLoadFailure {
-                        Button(action: { self.verifyPrivateAIConnection(fluidModel) }) {
-                            HStack(spacing: 5) {
-                                if isFluidLoading || isFluidTesting {
-                                    ProgressView()
-                                        .controlSize(.mini)
-                                        .fixedSize()
-                                }
-                                Text((isFluidLoading || isFluidTesting) ? "Loading..." : "Verify")
-                                    .font(.system(size: 12, weight: .semibold))
-                            }
-                        }
-                        .fluidButton(.accent, size: .small)
-                        .disabled(isFluidBusy)
-                        .help("Verify selected model")
-                    }
+                        .fluidButton(.compact, size: .compact)
+                        .frame(minWidth: 64, minHeight: AISettingsLayout.providerRowControlHeight)
 
-                    Button(action: { self.revealPrivateAIModelFolder() }) {
-                        Image(systemName: "folder")
-                            .font(.system(size: 12, weight: .semibold))
+                        Spacer(minLength: 0)
                     }
-                    .fluidButton(.compact, size: .compact)
-                    .frame(width: 28, height: 28)
-                    .help("Open downloaded model folder")
-                } else {
-                    self.reasoningButton(for: item.id)
-
-                    Button("Edit") {
-                        self.activateProvider(item.id)
-                        if isEditing {
-                            self.viewModel.clearEditProviderDraft()
-                            self.viewModel.setEditingAPIKey(false, for: item.id)
-                        } else {
-                            self.viewModel.startEditingProvider()
-                            self.viewModel.setEditingAPIKey(true, for: item.id)
-                        }
-                    }
-                    .fluidButton(.compact, size: .compact)
                 }
+                .frame(width: 120, alignment: .trailing)
             }
 
             if isPrivateAIProvider, isFluidDownloading || isFluidLoading || isFluidLoaded || hasFluidLoadFailure || isFluidVerified || !isFluidInstalled {
@@ -1743,12 +1787,7 @@ extension AIEnhancementSettingsView {
                 return self.viewModel.selectedModelByProvider[key] ?? ""
             },
             set: { newValue in
-                let key = self.viewModel.providerKey(for: providerID)
-                self.viewModel.selectedModelByProvider[key] = newValue
-                self.viewModel.settings.selectedModelByProvider = self.viewModel.selectedModelByProvider
-                if providerID == self.viewModel.selectedProviderID {
-                    self.viewModel.selectedModel = newValue
-                }
+                self.viewModel.selectModel(newValue, for: providerID)
             }
         )
     }
@@ -1767,7 +1806,7 @@ extension AIEnhancementSettingsView {
             foreground: hasEnabledConfig ? self.theme.palette.accent : nil,
             borderColor: hasEnabledConfig ? self.theme.palette.accent.opacity(0.6) : nil
         )
-        .frame(width: 28, height: 28)
+        .frame(width: AISettingsLayout.providerRowControlHeight, height: AISettingsLayout.providerRowControlHeight)
         .help("Configure reasoning parameters")
     }
 
@@ -1777,15 +1816,10 @@ extension AIEnhancementSettingsView {
                 Image(systemName: "text.bubble.fill")
                     .font(.system(size: 12, weight: .medium))
                     .foregroundStyle(self.theme.palette.accent)
-                HStack(alignment: .firstTextBaseline, spacing: 0) {
-                    Text("Advanced Prompts")
-                        .font(.system(size: 14, weight: .semibold))
-                    Text(" - Choose how to process your speech — email, code, terminal, and more")
-                        .font(.caption)
-                        .foregroundStyle(.secondary)
-                }
-                .lineLimit(1)
-                .truncationMode(.tail)
+                Text("Advanced Prompts")
+                    .font(.system(size: 14, weight: .semibold))
+                    .lineLimit(1)
+                    .truncationMode(.tail)
             }
 
             self.advancedSettingsCard

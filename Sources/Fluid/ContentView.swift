@@ -894,6 +894,9 @@ struct ContentView: View {
             if configuredShortcut == shortcut {
                 return "Duplicate with \(otherTarget.title)"
             }
+            if shortcut.conflictsWith(configuredShortcut) {
+                return "Overlaps \(otherTarget.title) — use a different modifier key"
+            }
         }
 
         let targetPromptKey = target.promptConfigurationKey
@@ -905,6 +908,9 @@ struct ContentView: View {
             }
             if assignment.shortcut == shortcut {
                 return "Duplicate with Prompt Shortcut"
+            }
+            if shortcut.conflictsWith(assignment.shortcut) {
+                return "Overlaps Prompt Shortcut — use a different modifier key"
             }
         }
 

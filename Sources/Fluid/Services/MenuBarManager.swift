@@ -4,6 +4,7 @@ import PromiseKit
 import SwiftUI
 
 enum MenuBarNavigationDestination: String {
+    case customDictionary
     case preferences
 }
 
@@ -429,6 +430,14 @@ final class MenuBarManager: NSObject, ObservableObject, NSMenuDelegate {
         preferencesItem.keyEquivalentModifierMask = [.command]
         menu.addItem(preferencesItem)
 
+        let customDictionaryItem = NSMenuItem(
+            title: "Custom Dictionary",
+            action: #selector(openCustomDictionary),
+            keyEquivalent: ""
+        )
+        customDictionaryItem.target = self
+        menu.addItem(customDictionaryItem)
+
         let microphoneSubmenu = NSMenu(title: "Microphone")
         let microphoneMenuItem = NSMenuItem(title: "Microphone", action: nil, keyEquivalent: "")
         microphoneMenuItem.submenu = microphoneSubmenu
@@ -771,17 +780,25 @@ final class MenuBarManager: NSObject, ObservableObject, NSMenuDelegate {
     }
 
     @objc private func openPreferences() {
+        self.openNavigationDestination(.preferences)
+    }
+
+    @objc private func openCustomDictionary() {
+        self.openNavigationDestination(.customDictionary)
+    }
+
+    private func openNavigationDestination(_ destination: MenuBarNavigationDestination) {
         // Ensure a fresh one-shot request every time the menu item is clicked.
         self.requestedNavigationDestination = nil
-        self.requestedNavigationDestination = .preferences
+        self.requestedNavigationDestination = destination
 
         self.openMainWindow()
 
         // Nudge again after the window is front-most, so an already-open ContentView
-        // will still switch tabs even if it consumed a previous preference request.
+        // will still switch tabs even if it consumed a previous navigation request.
         DispatchQueue.main.async { [weak self] in
             self?.requestedNavigationDestination = nil
-            self?.requestedNavigationDestination = .preferences
+            self?.requestedNavigationDestination = destination
         }
     }
 

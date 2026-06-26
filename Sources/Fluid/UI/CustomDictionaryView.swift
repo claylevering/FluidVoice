@@ -18,7 +18,7 @@ struct CustomDictionaryView: View {
     @State private var editingBoostTerm: EditableBoostTerm?
 
     // Collapsible section states
-    @State private var isOfflineSectionExpanded = false
+    @State private var isInstantReplacementSectionExpanded = true
     @State private var isAISectionExpanded = true
 
     @State private var boostStatusMessage = "Add custom words for better Parakeet recognition."
@@ -30,11 +30,11 @@ struct CustomDictionaryView: View {
             VStack(alignment: .leading, spacing: 16) {
                 self.pageHeader
 
-                // Section 1: Custom Words (Parakeet)
-                self.aiPostProcessingSection
+                // Section 1: Instant Replacement
+                self.instantReplacementSection
 
-                // Section 2: Instant Replacement
-                self.offlineReplacementSection
+                // Section 2: Custom Words (Parakeet)
+                self.aiPostProcessingSection
             }
             .padding(20)
         }
@@ -89,39 +89,31 @@ struct CustomDictionaryView: View {
                     .fontWeight(.semibold)
             }
 
-            Text("Improve transcription accuracy with Custom Words for names and product terms, plus Instant Replacement for simple find-and-replace.")
+            Text("Fix recurring transcription mistakes with Instant Replacement, or add Custom Words for names and product terms.")
                 .font(.subheadline)
                 .foregroundStyle(.secondary)
         }
     }
 
-    // MARK: - Section 2: Offline Replacement
+    // MARK: - Section 1: Instant Replacement
 
-    private var offlineReplacementSection: some View {
+    private var instantReplacementSection: some View {
         ThemedCard(hoverEffect: false) {
             VStack(alignment: .leading, spacing: 0) {
                 // Collapsible Header
                 Button {
                     withAnimation(.easeInOut(duration: 0.2)) {
-                        self.isOfflineSectionExpanded.toggle()
+                        self.isInstantReplacementSectionExpanded.toggle()
                     }
                 } label: {
                     HStack {
-                        Image(systemName: self.isOfflineSectionExpanded ? "chevron.down" : "chevron.right")
+                        Image(systemName: self.isInstantReplacementSectionExpanded ? "chevron.down" : "chevron.right")
                             .font(.caption)
                             .foregroundStyle(.secondary)
                             .frame(width: 16)
 
                         Text("Instant Replacement")
                             .font(.headline)
-
-                        // Offline badge
-                        Text("OFFLINE")
-                            .font(.caption2.weight(.semibold))
-                            .padding(.horizontal, 6)
-                            .padding(.vertical, 2)
-                            .background(RoundedRectangle(cornerRadius: 4).fill(Color.fluidGreen.opacity(0.2)))
-                            .foregroundStyle(Color.fluidGreen)
 
                         Spacer()
 
@@ -135,7 +127,7 @@ struct CustomDictionaryView: View {
                         }
 
                         // Add button (only when expanded and has entries)
-                        if self.isOfflineSectionExpanded && !self.entries.isEmpty {
+                        if self.isInstantReplacementSectionExpanded && !self.entries.isEmpty {
                             Button {
                                 self.showAddSheet = true
                             } label: {
@@ -149,23 +141,48 @@ struct CustomDictionaryView: View {
                 }
                 .buttonStyle(.plain)
 
-                if self.isOfflineSectionExpanded {
+                if self.isInstantReplacementSectionExpanded {
                     Divider()
                         .padding(.vertical, 12)
 
                     // Description
-                    Text("Simple find-and-replace. Works offline with zero latency. Replacements are applied instantly after transcription.")
-                        .font(.caption)
-                        .foregroundStyle(.secondary)
-                        .padding(.bottom, 12)
+                    VStack(alignment: .leading, spacing: 8) {
+                        Text("Fix recurring transcription mistakes or create shortcuts for text you use often.")
+
+                        VStack(alignment: .leading, spacing: 6) {
+                            self.instantReplacementExampleRow(
+                                label: "Common mistake",
+                                trigger: "fluid voice",
+                                replacement: "FluidVoice"
+                            )
+                            self.instantReplacementExampleRow(
+                                label: "Email",
+                                trigger: "email me",
+                                replacement: "you@example.com"
+                            )
+                            self.instantReplacementExampleRow(
+                                label: "Punctuation",
+                                trigger: "colon",
+                                replacement: ":"
+                            )
+                            self.instantReplacementExampleRow(
+                                label: "Punctuation",
+                                trigger: "exclamation",
+                                replacement: "!"
+                            )
+                        }
+                    }
+                    .font(.caption)
+                    .foregroundStyle(.secondary)
+                    .padding(.bottom, 12)
 
                     // Features
                     HStack(spacing: 12) {
-                        Label("No AI needed", systemImage: "cpu")
+                        Label("Find-and-replace", systemImage: "arrow.left.arrow.right")
                             .font(.caption2)
                             .foregroundStyle(.secondary)
 
-                        Label("Zero latency", systemImage: "bolt.fill")
+                        Label("Instant apply", systemImage: "bolt.fill")
                             .font(.caption2)
                             .foregroundStyle(.secondary)
 
@@ -177,7 +194,7 @@ struct CustomDictionaryView: View {
 
                     // Content
                     if self.entries.isEmpty {
-                        self.offlineEmptyState
+                        self.instantReplacementEmptyState
                     } else {
                         self.entriesListView
                     }
@@ -187,9 +204,32 @@ struct CustomDictionaryView: View {
         }
     }
 
-    // MARK: - Offline Empty State
+    private func instantReplacementExampleRow(label: String, trigger: String, replacement: String) -> some View {
+        HStack(spacing: 6) {
+            Text(label)
+                .font(.caption2.weight(.semibold))
+                .foregroundStyle(self.theme.palette.accent)
+                .frame(width: 108, alignment: .leading)
 
-    private var offlineEmptyState: some View {
+            Text("\"\(trigger)\"")
+                .font(.caption2.monospaced())
+                .foregroundStyle(.primary)
+
+            Image(systemName: "arrow.right")
+                .font(.caption2.weight(.semibold))
+                .foregroundStyle(.tertiary)
+
+            Text("\"\(replacement)\"")
+                .font(.caption2.monospaced())
+                .foregroundStyle(.primary)
+        }
+        .lineLimit(1)
+        .minimumScaleFactor(0.9)
+    }
+
+    // MARK: - Instant Replacement Empty State
+
+    private var instantReplacementEmptyState: some View {
         VStack(spacing: 12) {
             Image(systemName: "plus.circle.dashed")
                 .font(.system(size: 32))
@@ -229,7 +269,7 @@ struct CustomDictionaryView: View {
         }
     }
 
-    // MARK: - Section 1: Custom Words (Parakeet)
+    // MARK: - Section 2: Custom Words (Parakeet)
 
     private var aiPostProcessingSection: some View {
         ThemedCard(hoverEffect: false) {

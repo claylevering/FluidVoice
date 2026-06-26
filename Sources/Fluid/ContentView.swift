@@ -941,6 +941,8 @@ struct ContentView: View {
         guard !self.settings.shouldShowOnboarding else { return }
 
         switch destination {
+        case .customDictionary:
+            self.selectedSidebarItem = .customDictionary
         case .preferences:
             self.selectedSidebarItem = .preferences
         }

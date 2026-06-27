@@ -3121,6 +3121,13 @@ struct ContentView: View {
 
         self.hotkeyManagerInitialized = self.hotkeyManager?.validateEventTapHealth() ?? false
 
+        // Tier A — wire auto-stop to the same "stop + transcribe + insert" path as the hotkey.
+        self.asr.autoStopRequested = {
+            let route = self.currentDictationOutputRouteForHotkeyStop()
+            DebugLogger.shared.info("Tier A auto-stop triggered, using route: \(route.rawValue)", source: "ContentView")
+            await self.stopAndProcessTranscription(route: route)
+        }
+
         self.hotkeyManager?.setHotkeyMode(self.hotkeyMode)
 
         // Set cancel callback for Escape key handling (closes transient UI, resets recording state)

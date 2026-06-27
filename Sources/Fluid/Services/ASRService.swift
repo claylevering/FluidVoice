@@ -542,6 +542,15 @@ final class ASRService: ObservableObject {
     var audioLevelPublisher: AnyPublisher<CGFloat, Never> { self.audioLevelSubject.eraseToAnyPublisher() }
     private var lastAudioLevelSentAt: TimeInterval = 0
 
+    // Tier A — voice-activated auto-stop
+    #if arch(arm64)
+    private var autoStopStream: VadSpeechActivityStream?
+    #endif
+    private var autoStopController: AutoStopController?
+    private var autoStopSampleSink: (([Float]) -> Void)?
+    /// Set by the composition root to the same "stop + transcribe + insert" action the hotkey uses.
+    var autoStopRequested: (() async -> Void)?
+
     func consumeLastCompletedAudioSnapshot() -> DictationAudioSnapshot? {
         let snapshot = self.lastCompletedAudioSnapshot
         self.lastCompletedAudioSnapshot = nil
@@ -570,6 +579,12 @@ final class ASRService: ObservableObject {
             // Keep Combine sends on the main queue.
             DispatchQueue.main.async { [weak self] in
                 self?.audioLevelSubject.send(level)
+            }
+        },
+        onSamples: { [weak self] samples in
+            // Forward samples to Tier A VAD sink on the main queue.
+            DispatchQueue.main.async { [weak self] in
+                self?.autoStopSampleSink?(samples)
             }
         }
     )
@@ -866,6 +881,12 @@ final class ASRService: ObservableObject {
             } else {
                 DebugLogger.shared.debug("⏸️ Skipping streaming - model '\(model.displayName)' does not support real-time chunk processing", source: "ASRService")
             }
+
+            // Tier A — voice-activated auto-stop
+            if SettingsStore.shared.autoStopEnabled {
+                await self.startAutoStopIfNeeded()
+            }
+
             DebugLogger.shared.info("✅ START() completed successfully", source: "ASRService")
         } catch {
             DebugLogger.shared.error("Failed to start ASR session: \(error)", source: "ASRService")
@@ -960,6 +981,9 @@ final class ASRService: ObservableObject {
         DebugLogger.shared.debug("🚫 Setting audioCapturePipeline recording = false...", source: "ASRService")
         self.audioCapturePipeline.setRecordingEnabled(false)
         DebugLogger.shared.debug("✅ Capture pipeline disabled", source: "ASRService")
+
+        // Tier A — release VAD + cap timer before engine teardown
+        self.tearDownAutoStop()
 
         await self.runFastPreviewStopGraceIfNeeded()
 
@@ -1263,6 +1287,9 @@ final class ASRService: ObservableObject {
         self.isRunning = false
         self.audioCapturePipeline.setRecordingEnabled(false)
 
+        // Tier A — release VAD + cap timer
+        self.tearDownAutoStop()
+
         // Stop monitoring device
         self.stopMonitoringDevice()
 
@@ -1302,6 +1329,47 @@ final class ASRService: ObservableObject {
             await MediaPlaybackService.shared.resumeIfWePaused(true)
             DebugLogger.shared.info("🎵 Resumed system media after stopping without transcription", source: "ASRService")
         }
+    }
+
+    // MARK: - Tier A auto-stop
+
+    @MainActor
+    private func startAutoStopIfNeeded() async {
+        #if arch(arm64)
+        let hangover = SettingsStore.shared.autoStopHangover.silenceSeconds
+        let cap = SettingsStore.shared.maxRecordingCapSeconds
+        let stream = VadSpeechActivityStream(hangoverSeconds: hangover)
+        let controller = AutoStopController(scheduler: DispatchCapScheduler()) { [weak self] in
+            guard let self else { return }
+            Task { @MainActor in await self.autoStopRequested?() }
+        }
+        stream.setHandler { [weak controller] event in
+            Task { @MainActor in controller?.handle(event) }
+        }
+        do {
+            try await stream.start()
+            controller.recordingDidStart(capSeconds: cap)
+            self.autoStopStream = stream
+            self.autoStopController = controller
+            self.autoStopSampleSink = { [weak stream] samples in
+                Task { await stream?.ingest(samples) }
+            }
+            DebugLogger.shared.info("Tier A auto-stop started (hangover=\(hangover)s, cap=\(cap)s)", source: "ASRService")
+        } catch {
+            DebugLogger.shared.error("Tier A VAD start failed: \(error)", source: "ASRService")
+        }
+        #endif
+    }
+
+    private func tearDownAutoStop() {
+        self.autoStopController?.recordingDidStop()
+        self.autoStopController = nil
+        self.autoStopSampleSink = nil
+        #if arch(arm64)
+        let stream = self.autoStopStream
+        self.autoStopStream = nil
+        Task { await stream?.stop() }
+        #endif
     }
 
     private func configureSession() throws {
@@ -3089,6 +3157,7 @@ private extension ASRService {
 private final class AudioCapturePipeline {
     private let audioBuffer: ThreadSafeAudioBuffer
     private let onLevel: (CGFloat) -> Void
+    private let onSamples: ([Float]) -> Void
 
     private let lock = NSLock()
     private var recordingEnabled: Bool = false
@@ -3099,9 +3168,14 @@ private final class AudioCapturePipeline {
     private let historySize: Int = 2
     private let silenceThreshold: CGFloat = 0.04
 
-    init(audioBuffer: ThreadSafeAudioBuffer, onLevel: @escaping (CGFloat) -> Void) {
+    init(
+        audioBuffer: ThreadSafeAudioBuffer,
+        onLevel: @escaping (CGFloat) -> Void,
+        onSamples: @escaping ([Float]) -> Void = { _ in }
+    ) {
         self.audioBuffer = audioBuffer
         self.onLevel = onLevel
+        self.onSamples = onSamples
     }
 
     func setRecordingEnabled(_ enabled: Bool) {
@@ -3131,6 +3205,7 @@ private final class AudioCapturePipeline {
         }
 
         self.audioBuffer.append(mono16k)
+        self.onSamples(mono16k)
         let level = self.calculateAudioLevel(mono16k)
         self.onLevel(level)
     }

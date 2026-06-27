@@ -49,6 +49,9 @@ actor CtcWakeWordDetector: WakeWordDetecting {
         guard !tokens.isEmpty else { self.vocabulary = nil; return }
         let term = CustomVocabularyTerm(
             text: valid, weight: 1.0, aliases: [], tokenIds: nil, ctcTokenIds: tokens)
+        // NOTE: these are FluidAudio's vocabulary-boosting (transcript-rescoring) defaults,
+        // NOT independently tuned for wake-word spotting on raw audio. Task 12 (on-device
+        // E2E) must evaluate whether tighter/looser thresholds suit wake-word precision.
         self.vocabulary = CustomVocabularyContext(
             terms: [term],
             alpha: 2.8,

@@ -10,4 +10,7 @@ final class WakeWordPhraseValidationTests: XCTestCase {
         XCTAssertNil(WakeWordPhrase.validated("ok"))            // < 3 chars
         XCTAssertEqual(WakeWordPhrase.validated("Computer"), "Computer")
     }
+    func testExactlyMinLengthPhraseIsAccepted() {
+        XCTAssertEqual(WakeWordPhrase.validated("abc"), "abc")   // count == 3 (== SettingsStore.minWakeWordLength) must pass
+    }
 }

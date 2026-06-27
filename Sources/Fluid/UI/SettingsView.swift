@@ -811,7 +811,7 @@ struct SettingsView: View {
 
                                     if self.settings.autoStopEnabled {
                                         Picker("Stop sensitivity", selection: Binding(
-                                            get: { SettingsStore.shared.autoStopHangover },
+                                            get: { self.settings.autoStopHangover },
                                             set: { SettingsStore.shared.autoStopHangover = $0 }
                                         )) {
                                             ForEach(AutoStopHangoverPreset.allCases) { preset in
@@ -823,7 +823,7 @@ struct SettingsView: View {
                                         Stepper(
                                             "Max recording length: \(self.settings.maxRecordingCapSeconds)s",
                                             value: Binding(
-                                                get: { SettingsStore.shared.maxRecordingCapSeconds },
+                                                get: { self.settings.maxRecordingCapSeconds },
                                                 set: { SettingsStore.shared.maxRecordingCapSeconds = $0 }),
                                             in: SettingsStore.maxRecordingCapRange,
                                             step: 5)

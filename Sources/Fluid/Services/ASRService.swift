@@ -807,6 +807,10 @@ final class ASRService: ObservableObject {
 
         guard self.micStatus == .authorized else {
             DebugLogger.shared.error("❌ START() blocked - mic not authorized", source: "ASRService")
+            // A wake trigger optimistically paused/marked the wake controller; since no
+            // recording (or recording engine) starts here, resume wake listening so it
+            // is not left permanently wedged.
+            await self.onRecordingStopped?()
             return
         }
         guard self.isRunning == false, self.isStarting == false else {
@@ -1372,22 +1376,26 @@ final class ASRService: ObservableObject {
         stream.setHandler { [weak controller] event in
             Task { @MainActor in controller?.handle(event) }
         }
+        // Arm the hard cap UNCONDITIONALLY, before and independent of VAD startup.
+        // The cap is the safety valve behind the "a wake word must never start a
+        // recording that runs forever" constraint; it must fire even if the VAD model
+        // fails to load. VAD endpointing is best-effort early-stop; the cap is the guarantee.
+        self.autoStopController = controller
+        controller.recordingDidStart(capSeconds: cap)
         do {
             try await stream.start()
-            controller.recordingDidStart(capSeconds: cap)
             self.autoStopStream = stream
-            self.autoStopController = controller
             self.autoStopSampleSink = { [weak stream] samples in
                 Task { await stream?.ingest(samples) }
             }
             DebugLogger.shared.info("Tier A auto-stop started (hangover=\(hangover)s, cap=\(cap)s)", source: "ASRService")
         } catch {
-            DebugLogger.shared.error("Tier A VAD start failed: \(error)", source: "ASRService")
+            DebugLogger.shared.error("Tier A VAD start failed; hard cap (\(cap)s) still active: \(error)", source: "ASRService")
         }
         #endif
     }
 
-    private func tearDownAutoStop() {
+    @MainActor private func tearDownAutoStop() {
         self.autoStopController?.recordingDidStop()
         self.autoStopController = nil
         self.autoStopSampleSink = nil

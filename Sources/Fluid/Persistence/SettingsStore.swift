@@ -3625,8 +3625,10 @@ final class SettingsStore: ObservableObject {
 
     var maxRecordingCapSeconds: Int {
         get {
-            let stored = self.defaults.object(forKey: Keys.maxRecordingCapSeconds) as? Int
-            return stored ?? Self.defaultMaxRecordingCapSeconds
+            guard let stored = self.defaults.object(forKey: Keys.maxRecordingCapSeconds) as? Int else {
+                return Self.defaultMaxRecordingCapSeconds
+            }
+            return min(max(stored, Self.maxRecordingCapRange.lowerBound), Self.maxRecordingCapRange.upperBound)
         }
         set {
             objectWillChange.send()

@@ -64,6 +64,9 @@ final class WakeActivationController {
         guard self.enabled, !self.recording else { return }
         guard case let .speechEnded(samples) = event else { return }
         if await self.detector.detect(in: samples) {
+            // Block further wake triggers immediately; the composition root will
+            // confirm via recordingDidStart() and resume via recordingDidStop().
+            self.recording = true
             await self.start()
         }
     }

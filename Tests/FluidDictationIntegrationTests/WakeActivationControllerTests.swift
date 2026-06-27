@@ -72,4 +72,22 @@ final class WakeActivationControllerTests: XCTestCase {
         XCTAssertEqual(stream.stopped, 1)
         XCTAssertEqual(indicator.hidden, 1)
     }
+
+    func testWakeWhileRecordingIsBlocked() async {
+        let (c, _, detector, _, starts) = make()
+        await c.enable()
+        await c.recordingDidStart()          // now paused/recording
+        detector.result = true
+        await c.handleForTesting(.speechEnded(samples: [0]))
+        XCTAssertEqual(starts(), 0, "a wake must not start a recording while already recording")
+    }
+
+    func testRapidDoubleWakeStartsOnce() async {
+        let (c, _, detector, _, starts) = make()
+        await c.enable()
+        detector.result = true
+        await c.handleForTesting(.speechEnded(samples: [0]))
+        await c.handleForTesting(.speechEnded(samples: [0]))   // second event must be ignored
+        XCTAssertEqual(starts(), 1, "rapid double wake must start exactly one recording")
+    }
 }

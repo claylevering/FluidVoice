@@ -29,6 +29,7 @@ final class WakeActivationController {
     func enable() async {
         guard !self.enabled else { return }
         self.enabled = true
+        self.recording = false
         await self.beginListening()
     }
 

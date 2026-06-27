@@ -904,6 +904,9 @@ final class ASRService: ObservableObject {
         } catch {
             DebugLogger.shared.error("Failed to start ASR session: \(error)", source: "ASRService")
 
+            // Reverse the earlier onRecordingStarted so wake listening can resume
+            await self.onRecordingStopped?()
+
             // Resume media if we paused it before the failure
             if self.didPauseMediaForThisSession {
                 await MediaPlaybackService.shared.resumeIfWePaused(true)

@@ -7,6 +7,7 @@
 	objects = {
 
 /* Begin PBXBuildFile section */
+		EA9462D9810EEEF1694B1425 /* WakeActivationControllerTests.swift in Sources */ = {isa = PBXBuildFile; fileRef = E849CD9C0BEFAEEB68CCE681 /* WakeActivationControllerTests.swift */; };
 		9A9426067949F660F0B0106A /* WakeWordPhraseValidationTests.swift in Sources */ = {isa = PBXBuildFile; fileRef = 47B27D1ABA760737CC685422 /* WakeWordPhraseValidationTests.swift */; };
 		BFAF0D42F2F30E3866A46782 /* AutoStopControllerTests.swift in Sources */ = {isa = PBXBuildFile; fileRef = EAEBC8AE2CAABD5E71ECCF83 /* AutoStopControllerTests.swift */; };
 		B035937541C4A2D2B86ADD1C /* VoiceActivationSettingsTests.swift in Sources */ = {isa = PBXBuildFile; fileRef = DA40471E8BC104B8DC164866 /* VoiceActivationSettingsTests.swift */; };
@@ -33,6 +34,7 @@
 /* End PBXContainerItemProxy section */
 
 /* Begin PBXFileReference section */
+		E849CD9C0BEFAEEB68CCE681 /* WakeActivationControllerTests.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = WakeActivationControllerTests.swift; sourceTree = "<group>"; };
 		47B27D1ABA760737CC685422 /* WakeWordPhraseValidationTests.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = WakeWordPhraseValidationTests.swift; sourceTree = "<group>"; };
 		EAEBC8AE2CAABD5E71ECCF83 /* AutoStopControllerTests.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = AutoStopControllerTests.swift; sourceTree = "<group>"; };
 		DA40471E8BC104B8DC164866 /* VoiceActivationSettingsTests.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = VoiceActivationSettingsTests.swift; sourceTree = "<group>"; };
@@ -109,6 +111,7 @@
 				7CDB0A262F3C4D5600FB7CAD /* Helpers */,
 				7CDB0A272F3C4D5600FB7CAD /* Resources */,
 				7CDB0A292F3C4D5600FB7CAD /* DictationE2ETests.swift */,
+				E849CD9C0BEFAEEB68CCE681 /* WakeActivationControllerTests.swift */,
 				47B27D1ABA760737CC685422 /* WakeWordPhraseValidationTests.swift */,
 				EAEBC8AE2CAABD5E71ECCF83 /* AutoStopControllerTests.swift */,
 				DA40471E8BC104B8DC164866 /* VoiceActivationSettingsTests.swift */,
@@ -266,6 +269,7 @@
 			files = (
 				7CDB0A2E2F3C4D5600FB7CAD /* AudioFixtureLoader.swift in Sources */,
 				7CDB0A2D2F3C4D5600FB7CAD /* DictationE2ETests.swift in Sources */,
+				EA9462D9810EEEF1694B1425 /* WakeActivationControllerTests.swift in Sources */,
 				9A9426067949F660F0B0106A /* WakeWordPhraseValidationTests.swift in Sources */,
 				BFAF0D42F2F30E3866A46782 /* AutoStopControllerTests.swift in Sources */,
 				B035937541C4A2D2B86ADD1C /* VoiceActivationSettingsTests.swift in Sources */,

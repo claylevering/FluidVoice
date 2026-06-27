@@ -316,7 +316,11 @@ struct ContentView: View {
             .onReceive(NotificationCenter.default.publisher(for: .settingsBackupDidRestore)) { _ in
                 self.reloadSettingsStateAfterBackupRestore()
             }
+            .onChange(of: self.settings.autoStopEnabled) { _, enabled in
+                AnalyticsService.shared.capture(.autoStopEnabledChanged, properties: ["enabled": enabled])
+            }
             .onChange(of: self.settings.wakeWordEnabled) { _, enabled in
+                AnalyticsService.shared.capture(.wakeWordEnabledChanged, properties: ["enabled": enabled])
                 // Tier C — drive idle wake-word listening from the setting. Read the
                 // controller inside the Task so we see whatever was built by
                 // initializeHotkeyManagerIfNeeded(), not a stale capture-list snapshot.
@@ -3162,7 +3166,10 @@ struct ContentView: View {
                 stream: wakeStream,
                 detector: wakeDetector,
                 indicator: NotchListeningIndicator(),
-                start: { self.startRecording() }
+                start: {
+                    AnalyticsService.shared.capture(.wakeWordTriggered)
+                    self.startRecording()
+                }
             )
             self.wakeController = controller
 

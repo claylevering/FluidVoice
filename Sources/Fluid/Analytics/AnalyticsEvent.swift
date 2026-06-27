@@ -28,6 +28,11 @@ enum AnalyticsEvent: String {
     // Prompts
     case customPromptUsed = "custom_prompt_used"
 
+    // Voice activation (Tier A / Tier C)
+    case autoStopEnabledChanged = "auto_stop_enabled_changed"
+    case wakeWordEnabledChanged = "wake_word_enabled_changed"
+    case wakeWordTriggered = "wake_word_triggered"
+
     // Errors
     case errorOccurred = "error_occurred"
 }

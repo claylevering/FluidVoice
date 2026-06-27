@@ -788,6 +788,68 @@ struct SettingsView: View {
                                     }
                                     Divider().opacity(0.2)
 
+                                    // MARK: - Voice Activation Section
+
+                                    Text("Voice Activation")
+                                        .font(.subheadline.weight(.semibold))
+                                        .foregroundStyle(self.settingsTertiaryText)
+
+                                    // Tier A — auto-stop. Locked ON while Tier C (wake word) is active.
+                                    Toggle("Stop recording automatically on silence", isOn: Binding(
+                                        get: { SettingsStore.shared.autoStopEnabled },
+                                        set: { SettingsStore.shared.autoStopEnabled = $0 }
+                                    ))
+                                    .toggleStyle(.switch)
+                                    .tint(self.theme.palette.accent)
+                                    .disabled(self.settings.wakeWordEnabled)
+
+                                    if self.settings.wakeWordEnabled {
+                                        Text("Auto-stop stays on while wake word is active.")
+                                            .font(.caption)
+                                            .foregroundStyle(self.settingsTertiaryText)
+                                    }
+
+                                    if self.settings.autoStopEnabled {
+                                        Picker("Stop sensitivity", selection: Binding(
+                                            get: { SettingsStore.shared.autoStopHangover },
+                                            set: { SettingsStore.shared.autoStopHangover = $0 }
+                                        )) {
+                                            ForEach(AutoStopHangoverPreset.allCases) { preset in
+                                                Text(preset.displayName).tag(preset)
+                                            }
+                                        }
+                                        .pickerStyle(.segmented)
+
+                                        Stepper(
+                                            "Max recording length: \(self.settings.maxRecordingCapSeconds)s",
+                                            value: Binding(
+                                                get: { SettingsStore.shared.maxRecordingCapSeconds },
+                                                set: { SettingsStore.shared.maxRecordingCapSeconds = $0 }),
+                                            in: SettingsStore.maxRecordingCapRange,
+                                            step: 5)
+                                    }
+
+                                    // Tier C — wake word. May only be on while Tier A is also on (enforced in model).
+                                    Toggle("Start dictation with a wake word", isOn: Binding(
+                                        get: { SettingsStore.shared.wakeWordEnabled },
+                                        set: { SettingsStore.shared.wakeWordEnabled = $0 }
+                                    ))
+                                    .toggleStyle(.switch)
+                                    .tint(self.theme.palette.accent)
+
+                                    if self.settings.wakeWordEnabled {
+                                        TextField("Wake phrase", text: Binding(
+                                            get: { SettingsStore.shared.wakeWordPhrase },
+                                            set: { SettingsStore.shared.wakeWordPhrase = $0 }
+                                        ))
+                                        .textFieldStyle(.roundedBorder)
+                                        Text("At least 3 characters; a distinctive two-word phrase works best. Always-on listening uses your microphone while the app is open.")
+                                            .font(.caption)
+                                            .foregroundStyle(self.settingsTertiaryText)
+                                    }
+
+                                    Divider().opacity(0.2)
+
                                     self.optionToggleRow(
                                         title: "Copy to Clipboard",
                                         description: "Automatically copy transcribed text to clipboard as a backup.",

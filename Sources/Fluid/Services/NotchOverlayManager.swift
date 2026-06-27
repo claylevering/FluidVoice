@@ -336,6 +336,35 @@ final class NotchOverlayManager {
         }
     }
 
+    // MARK: - Tier C listening indicator
+
+    /// Whether the passive Tier C "listening" state is currently presented.
+    /// Observable so a future compact-notch view can bind to it; kept separate from
+    /// the recording-overlay state machine (`state`/`generation`) so idle listening
+    /// can never interfere with a real recording overlay.
+    @Published private(set) var isListeningIndicatorVisible = false
+
+    /// Present a minimal, passive "listening" state for Tier C idle wake-word listening.
+    /// Deliberately does NOT touch the recording-overlay notch (`show(...)`/`hide()`):
+    /// it must coexist with — and be visually distinct from — the active-recording
+    /// overlay. Visual polish (a dedicated compact notch view) is deferred; today this
+    /// sets the observable flag and logs, which is enough for the lifecycle to be wired
+    /// and verified by inspection. Idempotent.
+    func showListeningIndicator() {
+        guard self.isListeningIndicatorVisible == false else { return }
+        self.isListeningIndicatorVisible = true
+        Self.overlayBench("listening_indicator_show")
+        DebugLogger.shared.info("Tier C listening indicator shown", source: "NotchOverlayManager")
+    }
+
+    /// Hide the passive Tier C "listening" state. Idempotent.
+    func hideListeningIndicator() {
+        guard self.isListeningIndicatorVisible else { return }
+        self.isListeningIndicatorVisible = false
+        Self.overlayBench("listening_indicator_hide")
+        DebugLogger.shared.info("Tier C listening indicator hidden", source: "NotchOverlayManager")
+    }
+
     /// Async cleanup that properly waits for hide to complete
     private func performCleanup() async {
         let startedAt = ProcessInfo.processInfo.systemUptime

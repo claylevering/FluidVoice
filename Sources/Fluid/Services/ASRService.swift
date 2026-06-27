@@ -551,6 +551,14 @@ final class ASRService: ObservableObject {
     /// Set by the composition root to the same "stop + transcribe + insert" action the hotkey uses.
     var autoStopRequested: (() async -> Void)?
 
+    // Tier C — single chokepoint for pausing/resuming idle wake-word listening around a
+    // recording. The wake controller MUST stop its idle mic engine before the recording
+    // engine starts (onRecordingStarted) and may resume after it tears down (onRecordingStopped).
+    /// Called when a recording begins (any trigger), before the recording engine is contended.
+    var onRecordingStarted: (() async -> Void)?
+    /// Called in every stop path where `tearDownAutoStop()` runs.
+    var onRecordingStopped: (() async -> Void)?
+
     func consumeLastCompletedAudioSnapshot() -> DictationAudioSnapshot? {
         let snapshot = self.lastCompletedAudioSnapshot
         self.lastCompletedAudioSnapshot = nil
@@ -806,6 +814,11 @@ final class ASRService: ObservableObject {
             return
         }
 
+        // Tier C — pause idle wake-word listening BEFORE the recording engine is
+        // configured/started, so the idle mic engine is never running concurrently with
+        // the recording engine. Awaited (not fire-and-forget) to guarantee happens-before.
+        await self.onRecordingStarted?()
+
         // Reset media pause state for this session
         self.didPauseMediaForThisSession = false
         self.audioRouteRecoveryTask?.cancel()
@@ -1005,6 +1018,11 @@ final class ASRService: ObservableObject {
         DebugLogger.shared.debug("🛑 Calling engine.stop()...", source: "ASRService")
         self.engine.stop()
         DebugLogger.shared.debug("✅ Engine stopped", source: "ASRService")
+
+        // Tier C — resume idle wake-word listening only AFTER the recording engine is
+        // fully stopped, so the idle mic engine never overlaps the recording engine.
+        // No-op if Tier C is disabled.
+        await self.onRecordingStopped?()
 
         // Capture has fully ended — invoke the callback so callers can play a
         // stop cue or release capture-dependent UI without waiting on the
@@ -1298,6 +1316,11 @@ final class ASRService: ObservableObject {
 
         self.engine.stop()
         DebugLogger.shared.debug("Engine stopped", source: "ASRService")
+
+        // Tier C — resume idle wake-word listening only AFTER the recording engine is
+        // fully stopped, so the idle mic engine never overlaps the recording engine.
+        // No-op if Tier C is disabled.
+        await self.onRecordingStopped?()
 
         // Release old engine on a background thread — if the underlying device just died,
         // AVAudioEngine deallocation can block in CoreAudio's internal teardown.

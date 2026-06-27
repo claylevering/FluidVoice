@@ -175,6 +175,10 @@ struct ContentView: View {
     @State private var hotkeyManager: GlobalHotkeyManager? = nil
     @State private var hotkeyManagerInitialized: Bool = false
 
+    // Tier C — wake-word idle listening lifecycle. Built lazily in
+    // initializeHotkeyManagerIfNeeded(); only meaningful on Apple Silicon.
+    @State private var wakeController: WakeActivationController? = nil
+
     @State private var appear = false
     @State private var accessibilityEnabled = false
     @State private var primaryDictationShortcuts: [HotkeyShortcut] = SettingsStore.shared.primaryDictationShortcuts
@@ -311,6 +315,22 @@ struct ContentView: View {
             }
             .onReceive(NotificationCenter.default.publisher(for: .settingsBackupDidRestore)) { _ in
                 self.reloadSettingsStateAfterBackupRestore()
+            }
+            .onChange(of: self.settings.wakeWordEnabled) { _, enabled in
+                // Tier C — drive idle wake-word listening from the setting. Read the
+                // controller inside the Task so we see whatever was built by
+                // initializeHotkeyManagerIfNeeded(), not a stale capture-list snapshot.
+                #if arch(arm64)
+                Task {
+                    let controller = self.wakeController
+                    if enabled {
+                        await AudioStartupGate.shared.waitUntilOpen()
+                        await controller?.enable()
+                    } else {
+                        await controller?.disable()
+                    }
+                }
+                #endif
             }
             .toolbar {
                 if !self.settings.shouldShowOnboarding {
@@ -3127,6 +3147,43 @@ struct ContentView: View {
             DebugLogger.shared.info("Tier A auto-stop triggered, using route: \(route.rawValue)", source: "ContentView")
             await self.stopAndProcessTranscription(route: route)
         }
+
+        // Tier C — wake-word idle listening. Build the controller from a self-capturing
+        // VAD stream (it owns its own idle mic tap), the CTC wake detector, and the notch
+        // listening indicator. A wake hit calls startRecording() — exactly the hotkey path.
+        #if arch(arm64)
+        if self.wakeController == nil {
+            let wakeStream = VadSpeechActivityStream(
+                hangoverSeconds: SettingsStore.shared.autoStopHangover.silenceSeconds,
+                capturesOwnInput: true
+            )
+            let wakeDetector = CtcWakeWordDetector(phrase: SettingsStore.shared.wakeWordPhrase)
+            let controller = WakeActivationController(
+                stream: wakeStream,
+                detector: wakeDetector,
+                indicator: NotchListeningIndicator(),
+                start: { self.startRecording() }
+            )
+            self.wakeController = controller
+
+            // Single chokepoint: ASRService pauses idle listening before any recording
+            // engine starts and resumes after it fully tears down (both stop paths).
+            self.asr.onRecordingStarted = { [weak controller] in
+                await controller?.recordingDidStart()
+            }
+            self.asr.onRecordingStopped = { [weak controller] in
+                await controller?.recordingDidStop()
+            }
+
+            // On launch, enable Tier C if the setting is on (after the audio gate opens).
+            if SettingsStore.shared.wakeWordEnabled {
+                Task { [weak controller] in
+                    await AudioStartupGate.shared.waitUntilOpen()
+                    await controller?.enable()
+                }
+            }
+        }
+        #endif
 
         self.hotkeyManager?.setHotkeyMode(self.hotkeyMode)
 

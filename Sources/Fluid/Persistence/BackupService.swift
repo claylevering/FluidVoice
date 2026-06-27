@@ -86,6 +86,11 @@ struct SettingsBackupPayload: Codable, Equatable {
     let editPromptRoutingScope: SettingsStore.PromptRoutingScope?
     let defaultDictationPromptOverride: String?
     let defaultEditPromptOverride: String?
+    let autoStopEnabled: Bool?
+    let autoStopHangover: AutoStopHangoverPreset?
+    let maxRecordingCapSeconds: Int?
+    let wakeWordEnabled: Bool?
+    let wakeWordPhrase: String?
 }
 
 struct AppBackupDocument: Codable, Equatable {

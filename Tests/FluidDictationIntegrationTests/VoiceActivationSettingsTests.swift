@@ -64,4 +64,24 @@ final class VoiceActivationSettingsTests: XCTestCase {
         XCTAssertEqual(AutoStopHangoverPreset.balanced.silenceSeconds, 1.2, accuracy: 0.0001)
         XCTAssertEqual(AutoStopHangoverPreset.relaxed.silenceSeconds, 1.8, accuracy: 0.0001)
     }
+
+    func testBackupRestoreRoundTripsVoiceActivation() {
+        let s = SettingsStore.shared
+        s.wakeWordEnabled = true            // forces autoStopEnabled on
+        s.autoStopHangover = .relaxed
+        s.maxRecordingCapSeconds = 90
+        s.wakeWordPhrase = "Computer"
+
+        let payload = s.makeBackupPayload()
+
+        // Reset to defaults, then restore.
+        for k in keys { UserDefaults.standard.removeObject(forKey: k) }
+        s.restore(from: payload)
+
+        XCTAssertTrue(s.autoStopEnabled)
+        XCTAssertTrue(s.wakeWordEnabled)
+        XCTAssertEqual(s.autoStopHangover, .relaxed)
+        XCTAssertEqual(s.maxRecordingCapSeconds, 90)
+        XCTAssertEqual(s.wakeWordPhrase, "Computer")
+    }
 }

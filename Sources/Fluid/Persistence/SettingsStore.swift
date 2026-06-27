@@ -2774,7 +2774,12 @@ final class SettingsStore: ObservableObject {
             selectedEditPromptID: self.selectedEditPromptID,
             editPromptRoutingScope: self.editPromptRoutingScope,
             defaultDictationPromptOverride: self.defaultDictationPromptOverride,
-            defaultEditPromptOverride: self.defaultEditPromptOverride
+            defaultEditPromptOverride: self.defaultEditPromptOverride,
+            autoStopEnabled: self.autoStopEnabled,
+            autoStopHangover: self.autoStopHangover,
+            maxRecordingCapSeconds: self.maxRecordingCapSeconds,
+            wakeWordEnabled: self.wakeWordEnabled,
+            wakeWordPhrase: self.wakeWordPhrase
         )
     }
 
@@ -2865,6 +2870,12 @@ final class SettingsStore: ObservableObject {
         self.pauseMediaDuringTranscription = payload.pauseMediaDuringTranscription
         self.vocabularyBoostingEnabled = payload.vocabularyBoostingEnabled
         self.customDictionaryEntries = payload.customDictionaryEntries
+
+        if let autoStopEnabled = payload.autoStopEnabled { self.autoStopEnabled = autoStopEnabled }
+        if let autoStopHangover = payload.autoStopHangover { self.autoStopHangover = autoStopHangover }
+        if let cap = payload.maxRecordingCapSeconds { self.maxRecordingCapSeconds = cap }
+        if let wakeWordEnabled = payload.wakeWordEnabled { self.wakeWordEnabled = wakeWordEnabled }
+        if let phrase = payload.wakeWordPhrase { self.wakeWordPhrase = phrase }
 
         self.dictationPromptProfiles = promptProfiles
         self.appPromptBindings = appPromptBindings

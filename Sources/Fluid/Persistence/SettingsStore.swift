@@ -15,6 +15,10 @@ final class SettingsStore: ObservableObject {
     static let transcriptionPreviewCharLimitRange: ClosedRange<Int> = 50...800
     static let transcriptionPreviewCharLimitStep = 50
     static let defaultTranscriptionPreviewCharLimit = 150
+    static let maxRecordingCapRange: ClosedRange<Int> = 20...180
+    static let defaultMaxRecordingCapSeconds = 60
+    static let defaultWakeWordPhrase = "Hey Fluid"
+    static let minWakeWordLength = 3
     private let defaults = UserDefaults.standard
     private let keychain = KeychainService.shared
     private(set) var launchAtStartupEnabled = false
@@ -3582,6 +3586,75 @@ final class SettingsStore: ObservableObject {
         }
     }
 
+    // MARK: - Voice Activation (Tier A auto-stop + Tier C wake word)
+
+    /// Tier A — voice-activated auto-stop (VAD endpointing). Default OFF.
+    var autoStopEnabled: Bool {
+        get { self.defaults.bool(forKey: Keys.autoStopEnabled) }
+        set {
+            objectWillChange.send()
+            self.defaults.set(newValue, forKey: Keys.autoStopEnabled)
+            // Invariant: Tier C cannot outlive Tier A.
+            if newValue == false, self.defaults.bool(forKey: Keys.wakeWordEnabled) {
+                self.defaults.set(false, forKey: Keys.wakeWordEnabled)
+            }
+        }
+    }
+
+    var autoStopHangover: AutoStopHangoverPreset {
+        get {
+            self.defaults.string(forKey: Keys.autoStopHangover)
+                .flatMap(AutoStopHangoverPreset.init(rawValue:)) ?? .balanced
+        }
+        set {
+            objectWillChange.send()
+            self.defaults.set(newValue.rawValue, forKey: Keys.autoStopHangover)
+        }
+    }
+
+    var maxRecordingCapSeconds: Int {
+        get {
+            let stored = self.defaults.object(forKey: Keys.maxRecordingCapSeconds) as? Int
+            return stored ?? Self.defaultMaxRecordingCapSeconds
+        }
+        set {
+            objectWillChange.send()
+            let clamped = min(max(newValue, Self.maxRecordingCapRange.lowerBound),
+                              Self.maxRecordingCapRange.upperBound)
+            self.defaults.set(clamped, forKey: Keys.maxRecordingCapSeconds)
+        }
+    }
+
+    /// Tier C — wake-word auto-activation. Default OFF. Requires Tier A.
+    var wakeWordEnabled: Bool {
+        get { self.defaults.bool(forKey: Keys.wakeWordEnabled) }
+        set {
+            objectWillChange.send()
+            if newValue {
+                // Invariant: enabling Tier C force-enables Tier A.
+                self.defaults.set(true, forKey: Keys.autoStopEnabled)
+            }
+            self.defaults.set(newValue, forKey: Keys.wakeWordEnabled)
+        }
+    }
+
+    var wakeWordPhrase: String {
+        get {
+            let value = self.defaults.string(forKey: Keys.wakeWordPhrase)?
+                .trimmingCharacters(in: .whitespacesAndNewlines) ?? ""
+            return value.count >= Self.minWakeWordLength ? value : Self.defaultWakeWordPhrase
+        }
+        set {
+            objectWillChange.send()
+            let trimmed = newValue.trimmingCharacters(in: .whitespacesAndNewlines)
+            if trimmed.count >= Self.minWakeWordLength {
+                self.defaults.set(trimmed, forKey: Keys.wakeWordPhrase)
+            } else {
+                self.defaults.removeObject(forKey: Keys.wakeWordPhrase)
+            }
+        }
+    }
+
     // MARK: - Speech Model (Unified ASR Model Selection)
 
     /// Unified speech recognition model selection.
@@ -4403,6 +4476,13 @@ private extension SettingsStore {
         static let defaultEditPromptOverride = "DefaultEditPromptOverride"
         static let defaultWritePromptOverride = "DefaultWritePromptOverride" // legacy fallback key
         static let defaultRewritePromptOverride = "DefaultRewritePromptOverride" // legacy fallback key
+
+        // Voice Activation (Tier A auto-stop + Tier C wake word)
+        static let autoStopEnabled = "AutoStopEnabled"
+        static let autoStopHangover = "AutoStopHangover"
+        static let maxRecordingCapSeconds = "MaxRecordingCapSeconds"
+        static let wakeWordEnabled = "WakeWordEnabled"
+        static let wakeWordPhrase = "WakeWordPhrase"
 
         /// Streak Settings
         static let weekendsDontBreakStreak = "WeekendsDontBreakStreak"

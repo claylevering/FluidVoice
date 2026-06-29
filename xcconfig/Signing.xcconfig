@@ -1,0 +1,14 @@
+// Signing.xcconfig — committed. Lets every contributor sign local builds with their OWN
+// Apple Developer team, without hardcoding a team ID into the Xcode project.
+//
+// To build & run from your own account:
+//   1.  cp xcconfig/Local.xcconfig.example xcconfig/Local.xcconfig
+//   2.  set DEVELOPMENT_TEAM in xcconfig/Local.xcconfig
+//       (Xcode ▸ Settings ▸ Accounts ▸ select your team ▸ "Team ID";
+//        a FREE personal team is enough for local builds — no paid membership needed)
+//
+// xcconfig/Local.xcconfig is gitignored, so your team ID is never committed.
+//
+// The "?" makes the include optional: without the local file the project still parses and
+// compiles (e.g. CI with signing disabled). Create the local file for a signed build.
+#include? "Local.xcconfig"
